@@ -1,7 +1,6 @@
 package com.saurabh.mediuserapp.network.response
 
-data class GetSpecificUserResponse(
+data class PasswordResetResponse(
     val message: String? = null,
-    val status: Int,
-    val user: User
+    val status: Int
 )

@@ -1,8 +1,7 @@
 package com.saurabh.mediuserapp.network.response
 
-data class LoginUserResponse(
+data class PasswordResetOtpResponse(
     val message: String? = null,
-    val role: String,
     val status: Int,
     val user_id: String? = null
 )

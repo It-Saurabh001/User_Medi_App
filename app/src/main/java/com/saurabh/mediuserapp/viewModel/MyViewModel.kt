@@ -1,24 +1,26 @@
 package com.saurabh.mediuserapp.viewModel
 
 import android.util.Log
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.saurabh.mediuserapp.common.ResultState
-import com.saurabh.mediuserapp.network.response.CreateUserResponse
-import com.saurabh.mediuserapp.network.response.GetSpecificUserResponse
 import com.saurabh.mediuserapp.repo.repository
+import com.saurabh.mediuserapp.utils.CreateUserState
 import com.saurabh.mediuserapp.utils.LoginUserState
 import com.saurabh.mediuserapp.utils.User
 import com.saurabh.mediuserapp.utils.UserState
+import dagger.hilt.android.lifecycle.HiltViewModel
+import jakarta.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 
-class MyViewModel : ViewModel() {
-    val repository = repository()
-    val createUserState = mutableStateOf<CreateUserResponse?>(null)
+@HiltViewModel
+class MyViewModel @Inject constructor(private val repository: repository) : ViewModel() {
+//    val repository = repository()
+    private val _createUserState = MutableStateFlow(CreateUserState())
+    val createUserState = _createUserState.asStateFlow()
 
     private val _loginUserState = MutableStateFlow(LoginUserState())
     val loginUserState = _loginUserState.asStateFlow()
@@ -35,15 +37,16 @@ class MyViewModel : ViewModel() {
         phoneNumber: String,
         email: String,
         pinCode: String,
-        address: String
+        address: String,
+        role: String
     ) {
+        if (_createUserState.value.success != null ) {
+            Log.d("TAG", "createUser: User already created")
+            return
+        }
+
         viewModelScope.launch (Dispatchers.IO){
-            val response = repository.createUser(name,password,phoneNumber,email,pinCode,address)
-            if (response.isSuccessful) {
-                createUserState.value = response.body()
-            } else {
-                Log.e("API_ERROR", "CreateUser failed: ${response.errorBody()?.string()}")
-            }
+            _createUserState.value = CreateUserState(isLoading = true)
         }
 
     }
@@ -76,11 +79,11 @@ class MyViewModel : ViewModel() {
                     }
                     is ResultState.Error->{
                         _specificUserState.value = UserState(error = it.exception.message, isLoading = false)
-                        Log.d("TAG", "getSpecificUser:  viewmodel ${_specificUserState.value.error}")
+                        Log.d("TAG", "getSpecificUser:  viewmodel error ${_specificUserState.value.error}")
                     }
                     is ResultState.Success->{
                         _specificUserState.value = UserState(success = it.data, isLoading = false)
-                        Log.d("TAG", "getSpecificUser:  viewmodel ${_specificUserState.value.success!!.message}")
+                        Log.d("TAG", "getSpecificUser:  viewmodel success ${_specificUserState.value.success!!.message}")
                     }
 
                 }

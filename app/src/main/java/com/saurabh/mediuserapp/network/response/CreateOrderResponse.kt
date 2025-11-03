@@ -1,6 +1,6 @@
 package com.saurabh.mediuserapp.network.response
 
-data class CreateUserResponse(
-    val message: String? = null,
+data class CreateOrderResponse(
+    val message: String,
     val status: Int
 )

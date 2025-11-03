@@ -24,6 +24,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.saurabh.mediuserapp.network.response.User
+import com.saurabh.mediuserapp.ui.components.SpecificUser
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 
 @Composable
@@ -33,12 +34,11 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
     LaunchedEffect(key1 = Unit) {
         viewModel.getSpecificUser(userId)
     }
-
+    LaunchedEffect(userState) {
+        viewModel.getSpecificUser(userId)
+    }
     Scaffold (modifier = Modifier.fillMaxSize()) { innerpadding ->
-
         when {
-
-
             userState.value.isLoading -> {
                 Column(
                     modifier = Modifier
@@ -48,7 +48,7 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
                     verticalArrangement = Arrangement.Center
                 ) {
                     Text(text = "This is loading screen")
-                    Text(text = "${userId}")
+                    Text(text = userId)
 
                     Log.d("TAG", "WaitingScreen: success")
 
@@ -73,7 +73,7 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
             }
 
             userState.value.success != null -> {
-                if (userState.value.success!!.user.first().isApproved == 0){
+                if (userState.value.success!!.user.isApproved == false){
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -82,7 +82,9 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
                     ) {
                     Text(text = "This is waiting screen ")
                         Text(text = "Wait for admin approval :) ")
-                    Text(text = "${userId}")
+                        if (userId != null) {
+                            Text(text = userId)
+                        }
                         Log.d("TAG", "WaitingScreen: success")
 
                         Button(onClick = {
@@ -103,7 +105,7 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
                         Log.d("TAG", "WaitingScreen: success")
 
 //                    HorizontalDivider()
-                        SpecificUser(userState.value.success!!.user.first())
+                        SpecificUser(userState.value.success!!.user)
                     }
                 }
 
@@ -116,41 +118,3 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
 
 
 
-
-@Composable
-fun SpecificUser(user : User) {
-    val userDetails = listOf(
-        "ID" to user.id.toString(),
-        "User ID" to user.user_id.toString(),
-        "Password" to user.password.toString(),
-        "Date of Account Creation" to user.date_of_account_creation.toString(),
-        "isApproved" to user.isApproved.toString(),
-        "Block" to user.block.toString(),
-        "Name" to user.name.toString(),
-        "Phone Number" to user.phone_number.toString(),
-        "Email" to user.email.toString(),
-        "Pin Code" to user.pin_code.toString(),
-        "Address" to user.address.toString(),
-
-    )
-    Column {
-
-    }
-
-    LazyColumn (modifier = Modifier
-        .fillMaxSize()
-        .padding(16.dp)){
-        items(userDetails) {(label, value) ->
-            Row(modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 8.dp)) {
-                Text(text = label,style = MaterialTheme.typography.labelMedium)
-                Text(text = value,style = MaterialTheme.typography.bodyLarge,
-                    modifier = Modifier.padding(start = 4.dp))
-
-            }
-            HorizontalDivider()
-        }
-    }
-
-}

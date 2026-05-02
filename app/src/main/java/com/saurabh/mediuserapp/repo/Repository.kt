@@ -1,9 +1,9 @@
 package com.saurabh.mediuserapp.repo
 
-import android.content.Context
 import android.util.Log
 import com.saurabh.mediuserapp.common.ResultState
 import com.saurabh.mediuserapp.network.ApiServices
+import com.saurabh.mediuserapp.network.MainApiService
 import com.saurabh.mediuserapp.network.TokenManager
 import com.saurabh.mediuserapp.network.response.CreateOrderResponse
 import com.saurabh.mediuserapp.network.response.CreateUserResponse
@@ -22,8 +22,8 @@ import kotlinx.coroutines.flow.flow
 import javax.inject.Inject
 
 
-class repository @Inject constructor(
-    private val apiServices: ApiServices,
+class Repository @Inject constructor(
+    @MainApiService private val apiServices: ApiServices,
     private val tokenManager: TokenManager
 ){
 //    private val tokenManager = TokenManager.getInstance(context)
@@ -70,7 +70,8 @@ class repository @Inject constructor(
                 val body = response.body()!!
                 //ONLY SAVE user_id and role (tokens aayenge OTP verification ke baad)
                 body.user_id?.let { tokenManager.saveUserId(it) }
-                body.role.let { tokenManager.saveRole(it) }
+                val role = body.role ?: "user" // Default to "user" if null
+                tokenManager.saveRole(role)
                 emit(ResultState.Success(response.body()!!))
                 Log.d("UserRepository", "loginUser success: ${response.body()}")
             } else {
@@ -98,8 +99,12 @@ class repository @Inject constructor(
                 val body = response.body()!!
 
                 // AB TOKENS SAVE KARO (according to your Flask API response)
-                tokenManager.saveTokens(body.access_token.toString(), body.refresh_token.toString(), body.role.toString(), userId)
-                tokenManager.saveRole(body.role.toString())
+                val accessToken = body.access_token ?: ""
+                val refreshToken = body.refresh_token ?: ""
+                val role = body.role ?: "user"
+
+                tokenManager.saveTokens(accessToken, refreshToken, role, userId)
+                tokenManager.saveRole(role)
                 emit(ResultState.Success(response.body()!!))
                 Log.d("UserRepository", "verifyUserOtp success: ${response.body()}")
             } else {
@@ -121,7 +126,7 @@ class repository @Inject constructor(
     // ----------------------------------
     suspend fun requestUserPasswordReset(
         email: String
-    ): Flow<ResultState<PasswordResetOtpResponse>> = flow {
+    ): Flow<ResultState<PasswordResetResponse>> = flow {
         emit(ResultState.Loading)
         try {
             val response = apiServices.requestUserPasswordReset(email)
@@ -146,7 +151,7 @@ class repository @Inject constructor(
         userId: String,
         otp: String,
         newPassword: String
-    ): Flow<ResultState<PasswordResetResponse>> = flow {
+    ): Flow<ResultState<PasswordResetOtpResponse>> = flow {
         emit(ResultState.Loading)
         try {
             val response = apiServices.resetUserPasswordWithOtp(userId, otp, newPassword)
@@ -337,6 +342,10 @@ class repository @Inject constructor(
 
     fun getCurrentUserRole(): String? {
         return tokenManager.getUserRole()
+    }
+
+    fun getStoredToken(): String {
+        return tokenManager.getAccessToken() ?: ""
     }
 
 

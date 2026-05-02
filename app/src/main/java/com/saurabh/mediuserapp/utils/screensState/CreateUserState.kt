@@ -1,7 +1,6 @@
-package com.saurabh.mediuserapp.utils
+package com.saurabh.mediuserapp.utils.screensState
 
 import com.saurabh.mediuserapp.network.response.CreateUserResponse
-import com.saurabh.mediuserapp.network.response.LoginUserResponse
 
 data class CreateUserState(
     val isLoading: Boolean = false,

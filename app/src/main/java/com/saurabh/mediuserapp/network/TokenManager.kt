@@ -32,6 +32,7 @@ class TokenManager  private constructor(context: Context){
 
     // Save tokens after successful login/OTP verification
     fun saveTokens(accessToken: String, refreshToken: String, role: String, userId: String) {
+        com.saurabh.mediuserapp.utils.AppLogger.d(com.saurabh.mediuserapp.utils.AppLogger.TAG_AUTH, "Saving tokens for user: $userId (Role: $role)")
         prefs.edit().apply {
             putString(KEY_ACCESS_TOKEN, accessToken)
             putString(KEY_REFRESH_TOKEN, refreshToken)
@@ -70,17 +71,21 @@ class TokenManager  private constructor(context: Context){
 
     // Update only access token (after refresh)
     fun updateAccessToken(newAccessToken: String) {
+        com.saurabh.mediuserapp.utils.AppLogger.d(com.saurabh.mediuserapp.utils.AppLogger.TAG_AUTH, "Updating access token")
         prefs.edit { putString(KEY_ACCESS_TOKEN, newAccessToken) }
     }
 
     // Clear all tokens (logout)
     fun clearTokens() {
+        com.saurabh.mediuserapp.utils.AppLogger.d(com.saurabh.mediuserapp.utils.AppLogger.TAG_AUTH, "Clearing all tokens")
         prefs.edit { clear().apply() }
     }
 
     // Check if user is logged in
     fun isLoggedIn(): Boolean {
-        return !getAccessToken().isNullOrEmpty()
+        val loggedIn = !getAccessToken().isNullOrEmpty()
+        com.saurabh.mediuserapp.utils.AppLogger.d(com.saurabh.mediuserapp.utils.AppLogger.TAG_AUTH, "Checking login status: $loggedIn")
+        return loggedIn
     }
 
 

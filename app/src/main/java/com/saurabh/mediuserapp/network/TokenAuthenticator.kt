@@ -7,73 +7,6 @@ import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
 
-class TokenAuthenticator1(
-    private val tokenManager: TokenManager,
-    private val apiService: ApiServices
-) : Authenticator {
-
-    override fun authenticate(route: Route?, response: Response): Request? {
-        // If response is 401 (Unauthorized), try to refresh token
-
-        // Avoid infinite loop - if already tried with new token, don't retry
-        if (response.request.header("Authorization")?.contains("Bearer") == true
-            && responseCount(response) >= 3) {
-            return null // Give up after 3 attempts
-        }
-
-        val refreshToken = tokenManager.getRefreshToken() ?: return null
-
-        // Synchronously refresh token (blocking call)
-        val newAccessToken = synchronized(this) {
-            try {
-                runBlocking {
-                    refreshAccessToken(refreshToken)
-                }
-            } catch (e: Exception) {
-                null
-            }
-        }
-
-        // If refresh failed, return null (will trigger logout)
-        if (newAccessToken == null) {
-            tokenManager.clearTokens()
-            return null
-        }
-
-        // Update token in manager
-        tokenManager.updateAccessToken(newAccessToken)
-
-        // Retry original request with new token
-        return response.request.newBuilder()
-            .header("Authorization", "Bearer $newAccessToken")
-            .build()
-    }
-
-    private suspend fun refreshAccessToken(refreshToken: String): String? {
-        return try {
-            val response = apiService.refreshToken("Bearer $refreshToken")
-            if (response.isSuccessful) {
-                response.body()?.accessToken
-            } else {
-                null
-            }
-        } catch (e: Exception) {
-            null
-        }
-    }
-
-    // Count how many times we've tried to authenticate
-    private fun responseCount(response: Response): Int {
-        var result = 1
-        var currentResponse = response.priorResponse
-        while (currentResponse != null) {
-            result++
-            currentResponse = currentResponse.priorResponse
-        }
-        return result
-    }
-}
-
 
 class TokenAuthenticator(
     private val tokenManager: TokenManager,
@@ -81,43 +14,72 @@ class TokenAuthenticator(
 ) : Authenticator {
 
     override fun authenticate(route: Route?, response: Response): Request? {
+
+        // 1. Agar error 401 nahi hai, to hume kuch nahi karna
+        if (response.code != 401) {
+            return null
+        }
         // If response is 401 and we have a refresh token, try to refresh
-        if (response.code == 401) {
-            Log.d("TokenAuthenticator", "Received 401, attempting token refresh")
-
-            val refreshToken = tokenManager.getRefreshToken()
-
-            if (refreshToken.isNullOrEmpty()) {
-                Log.e("TokenAuthenticator", "No refresh token available")
-                tokenManager.clearTokens()
-                return null
-            }
-
-            // Prevent infinite loop - if this is already a retry, don't retry again
-            if (response.request.header("Authorization")?.let {
-                    it == "Bearer ${tokenManager.getAccessToken()}"
-                } == true && responseCount(response) >= 2) {
-                Log.e("TokenAuthenticator", "Already retried, clearing tokens")
-                tokenManager.clearTokens()
-                return null
-            }
-
-            // Try to refresh token synchronously
-            val newAccessToken = refreshAccessToken(refreshToken)
-
-            return if (newAccessToken != null) {
-                Log.d("TokenAuthenticator", "Token refreshed, retrying request")
-                response.request.newBuilder()
-                    .header("Authorization", "Bearer $newAccessToken")
-                    .build()
-            } else {
-                Log.e("TokenAuthenticator", "Token refresh failed")
-                tokenManager.clearTokens()
-                null
-            }
+        Log.d("TokenAuthenticator", "Received 401, attempting token refresh")
+//        Refresh Token nikalo (TokenManager se)
+        val refreshToken = tokenManager.getRefreshToken()
+        // Agar Refresh Token hi nahi hai, to User ko seedha Logout karo
+        if (refreshToken.isNullOrEmpty()) {
+            Log.e("TokenAuthenticator", "No refresh token available")
+            tokenManager.clearTokens()
+            return null
         }
 
-        return null
+//      SYNCHRONIZED BLOCK
+        // Agar ek saath 4-5 API fail hoti hain, to ye block rokega ki refresh API baar-baar call na ho
+        synchronized(this) {
+            // Check karo: Kya kisi dusri thread ne token already update kar diya hai?
+            val newAccessToken = tokenManager.getAccessToken()
+            val requestAccessToken =
+                response.request.header("Authorization")?.replace("Bearer ", "")
+
+            // Agar TokenManager wala token aur Request wala token alag hai,
+            // iska matlab token already refresh ho chuka hai. Bas retry karo.
+            if (newAccessToken != null && newAccessToken != requestAccessToken) {
+                return response.request.newBuilder()
+                    .header("Authorization", "Bearer $newAccessToken")
+                    .build()
+            }
+
+//                Retry Count Check (Infinite Loop se bachne ke liye)
+            if (responseCount(response) >= 2) {
+                tokenManager.clearTokens() // Retry limit over, logout
+                Log.e("TokenAuthenticator", "Already retried, clearing tokens")
+
+                return null
+            }
+
+//                API Call to Refresh Token
+            // runBlocking zaroori hai kyunki ye method background thread par hai par result sync chahiye
+            val refreshedToken = runBlocking {
+                refreshAccessToken(refreshToken)
+            }
+
+//                Result Handling
+            return if (refreshedToken != null) {
+                // Success: Sirf Access Token update karo (TokenManager ka method use kiya)
+                tokenManager.updateAccessToken(refreshedToken)
+                Log.d("TokenAuthenticator", "Token refreshed, retrying request")
+
+                // Retry Original Request with NEW Token
+                response.request.newBuilder()
+                    .header("Authorization", "Bearer $refreshedToken")
+                    .build()
+            } else {
+                // Failure: Refresh Token bhi invalid/expire ho gaya
+                tokenManager.clearTokens() // Logout
+                Log.e("TokenAuthenticator", "Token refresh failed")
+
+                null
+            }
+
+        }
+
     }
 
     private fun refreshAccessToken(refreshToken: String): String? {
@@ -152,4 +114,5 @@ class TokenAuthenticator(
         }
         return result
     }
+
 }

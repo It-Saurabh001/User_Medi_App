@@ -69,7 +69,7 @@ interface ApiServices {
     @POST("user/requestUserPasswordReset")
     suspend fun requestUserPasswordReset(
         @Field("email") email: String
-    ): Response<PasswordResetOtpResponse>
+    ): Response<PasswordResetResponse>
 
     @FormUrlEncoded
     @POST("user/resetUserPasswordWithOtp")
@@ -77,7 +77,7 @@ interface ApiServices {
         @Field("user_id") userId: String,
         @Field("otp") otp: String,
         @Field("new_password") newPassword: String
-    ): Response<PasswordResetResponse>
+    ): Response<PasswordResetOtpResponse>
 
 
 

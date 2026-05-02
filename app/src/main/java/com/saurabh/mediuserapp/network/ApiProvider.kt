@@ -24,6 +24,9 @@ annotation class TempRetrofit
 @Retention(AnnotationRetention.BINARY)
 annotation class MainRetrofit
 
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class MainApiService
 
 @Module
 @InstallIn(SingletonComponent::class)
@@ -34,6 +37,13 @@ object ApiProvider {
     @Singleton
     fun provideTokenManager(@ApplicationContext context: Context): TokenManager {
         return TokenManager.getInstance(context)
+    }
+
+    // Provide Custom Logging Interceptor
+    @Provides
+    @Singleton
+    fun provideLoggingInterceptor(): LoggingInterceptor {
+        return LoggingInterceptor()
     }
 
     // Provide Logging Interceptor
@@ -50,10 +60,12 @@ object ApiProvider {
     @Singleton
     @TempRetrofit
     fun provideTempRetrofit(
-        loggingInterceptor: HttpLoggingInterceptor
+        loggingInterceptor: HttpLoggingInterceptor,
+        customLoggingInterceptor: LoggingInterceptor
     ): Retrofit {
         val client = OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
+            .addInterceptor(customLoggingInterceptor)
             .connectTimeout(30, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .writeTimeout(30, TimeUnit.SECONDS)
@@ -95,11 +107,13 @@ object ApiProvider {
     @Singleton
     fun provideHttpClient(
         loggingInterceptor: HttpLoggingInterceptor,
+        customLoggingInterceptor: LoggingInterceptor,
         authInterceptor: AuthInterceptor,
         tokenAuthenticator: TokenAuthenticator
     ): OkHttpClient {
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
+            .addInterceptor(customLoggingInterceptor)
             .addInterceptor(authInterceptor)
             .authenticator(tokenAuthenticator)
             .connectTimeout(30, TimeUnit.SECONDS)
@@ -123,78 +137,12 @@ object ApiProvider {
     // Main ApiService
     @Provides
     @Singleton
+    @MainApiService
     fun provideApiServices(@MainRetrofit retrofit: Retrofit): ApiServices {
         return retrofit.create(ApiServices::class.java)
     }
 }
 
-@Module
-@InstallIn(SingletonComponent::class)
-object ApiProvider1{
-    private const val BASE_URL = com.saurabh.mediuserapp.utils.BASE_URL1 // Replace with your Flask API URL
-
-    // Provide TokenManager
-    @Provides
-    @Singleton
-    fun provideTokenManager(context: Context): TokenManager {
-        return TokenManager.getInstance(context)
-    }
-
-    @Provides
-    @Singleton
-    fun provideHttpLogginInterceptor(): HttpLoggingInterceptor{
-        return HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
-        }
-    }
-    // Temporary Retrofit for Token Refresh (like in your RetrofitClient)
-    @Provides
-    @Singleton
-    fun provideTempApiService(): ApiServices {
-        val retrofit = Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-
-        return retrofit.create(ApiServices::class.java)
-    }
-
-
-    @Provides
-    @Singleton
-    fun ProvideHttpClient(
-        loggingInterceptor: HttpLoggingInterceptor,
-        tokenManager: TokenManager,
-        tempApiService: ApiServices
-    ): OkHttpClient{
-        return OkHttpClient.Builder()
-            .addInterceptor(loggingInterceptor)
-            .addInterceptor(AuthInterceptor(tokenManager))
-            .authenticator(TokenAuthenticator(tokenManager, tempApiService))
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
-        return Retrofit.Builder()
-            .baseUrl(BASE_URL)
-            .client(okHttpClient)
-            .addConverterFactory(GsonConverterFactory.create())
-            .build()
-    }
-
-    @Provides
-    @Singleton
-    fun provideApiServices(retrofit: Retrofit) : ApiServices{
-        return retrofit.create(ApiServices::class.java)
-    }
-
-}
 
 data class RefreshTokenResponse(
     @SerializedName("success")

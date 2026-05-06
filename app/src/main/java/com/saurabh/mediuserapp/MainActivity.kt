@@ -6,7 +6,6 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import com.saurabh.mediuserapp.ui.nav.NavApp
-import com.saurabh.mediuserapp.ui.screens.SignUp
 import com.saurabh.mediuserapp.ui.theme.MediUserAppTheme
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 import dagger.hilt.android.AndroidEntryPoint

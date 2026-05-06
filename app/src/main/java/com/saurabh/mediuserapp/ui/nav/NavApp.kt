@@ -141,7 +141,7 @@ fun NavApp(viewModel: MyViewModel) {
 
             composable<Routes.SignUpRoutes> {
                 Log.d(NAV_TAG, "Destination: SignUpRoutes")
-                SignUp(viewModel, navController)
+                SignUp( viewModel,navController)
             }
 
             // Login OTP verification — receives userId from LoginUserResponse

@@ -28,6 +28,12 @@ interface ApiServices {
     // ----------------------------
 
 
+    @POST("admin/refreshToken")
+    fun refreshToken(
+        @Header("Authorization") refreshToken: String
+    ): retrofit2.Call<RefreshTokenResponse>
+
+
     // for signup use post
     @FormUrlEncoded
     @POST("user/create")
@@ -143,10 +149,6 @@ interface ApiServices {
     ): Response<GetUserSellHistoryResponse>
 
 
-    @POST("admin/refreshToken")
-    suspend fun refreshToken(
-        @Header("Authorization") refreshToken: String
-    ): Response<RefreshTokenResponse>
 
 
 

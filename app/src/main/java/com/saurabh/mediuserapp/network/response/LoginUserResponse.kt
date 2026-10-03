@@ -4,5 +4,5 @@ data class LoginUserResponse(
     val message: String? = null,
     val role: String? = "user",
     val status: Int,
-    val user_id: String
+    val user_id: String? = null
 )

@@ -73,7 +73,8 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
             }
 
             userState.value.success != null -> {
-                if (userState.value.success!!.user.isApproved == false){
+                val currentUser = userState.value.success?.user
+                if (currentUser?.isApproved == false){
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -93,7 +94,7 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
                             Text(text = "Refresh")
                         }
                     }
-                }else {
+                } else if (currentUser != null) {
                     Column(
                         modifier = Modifier
                             .fillMaxSize()
@@ -105,7 +106,7 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
                         Log.d("TAG", "WaitingScreen: success")
 
 //                    HorizontalDivider()
-                        SpecificUser(userState.value.success!!.user)
+                        SpecificUser(currentUser)
                     }
                 }
 

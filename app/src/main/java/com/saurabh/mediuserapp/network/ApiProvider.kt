@@ -1,8 +1,11 @@
 package com.saurabh.mediuserapp.network
 
 import android.content.Context
+import android.util.Log
 import com.google.gson.annotations.SerializedName
+import com.saurabh.mediuserapp.BuildConfig
 import com.saurabh.mediuserapp.utils.BASE_URL1
+import dagger.Lazy
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -16,9 +19,16 @@ import java.util.concurrent.TimeUnit
 import javax.inject.Qualifier
 import javax.inject.Singleton
 
+
+
+
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
-annotation class TempRetrofit
+annotation class AuthRetrofit
+
+@Qualifier
+@Retention(AnnotationRetention.BINARY)
+annotation class AuthApiService
 
 @Qualifier
 @Retention(AnnotationRetention.BINARY)
@@ -32,10 +42,14 @@ annotation class MainApiService
 @InstallIn(SingletonComponent::class)
 object ApiProvider {
 
+    const val BASE_URL1 = BuildConfig.WirelessPhysicalDevice
+
+
     // Provide TokenManager
     @Provides
     @Singleton
     fun provideTokenManager(@ApplicationContext context: Context): TokenManager {
+        Log.d("PERF_TRACE", "Hilt provideTokenManager [Thread: ${Thread.currentThread().name}]")
         return TokenManager.getInstance(context)
     }
 
@@ -51,14 +65,15 @@ object ApiProvider {
     @Singleton
     fun provideHttpLoggingInterceptor(): HttpLoggingInterceptor {
         return HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) HttpLoggingInterceptor.Level.BODY
+            else HttpLoggingInterceptor.Level.NONE
         }
     }
 
     // Temporary Retrofit for Token Refresh (without auth to avoid circular dependency)
     @Provides
     @Singleton
-    @TempRetrofit
+    @AuthRetrofit
     fun provideTempRetrofit(
         loggingInterceptor: HttpLoggingInterceptor,
         customLoggingInterceptor: LoggingInterceptor
@@ -66,9 +81,9 @@ object ApiProvider {
         val client = OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .addInterceptor(customLoggingInterceptor)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(90, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .writeTimeout(90, TimeUnit.SECONDS)
             .build()
 
         return Retrofit.Builder()
@@ -81,7 +96,8 @@ object ApiProvider {
     // Temporary ApiService for Token Refresh
     @Provides
     @Singleton
-    fun provideTempApiService(@TempRetrofit retrofit: Retrofit): ApiServices {
+    @AuthApiService
+    fun provideTempApiService(@AuthRetrofit retrofit: Retrofit): ApiServices {
         return retrofit.create(ApiServices::class.java)
     }
 
@@ -97,9 +113,9 @@ object ApiProvider {
     @Singleton
     fun provideTokenAuthenticator(
         tokenManager: TokenManager,
-        tempApiService: ApiServices
+        @AuthApiService authApiServiceProvider: Lazy< ApiServices>
     ): TokenAuthenticator {
-        return TokenAuthenticator(tokenManager, tempApiService)
+        return TokenAuthenticator(tokenManager, authApiServiceProvider )
     }
 
     // Main OkHttpClient with Auth
@@ -111,14 +127,15 @@ object ApiProvider {
         authInterceptor: AuthInterceptor,
         tokenAuthenticator: TokenAuthenticator
     ): OkHttpClient {
+        Log.d("PERF_TRACE", "Hilt provideHttpClient [Thread: ${Thread.currentThread().name}]")
         return OkHttpClient.Builder()
             .addInterceptor(loggingInterceptor)
             .addInterceptor(customLoggingInterceptor)
             .addInterceptor(authInterceptor)
             .authenticator(tokenAuthenticator)
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .writeTimeout(30, TimeUnit.SECONDS)
+            .connectTimeout(90, TimeUnit.SECONDS)
+            .readTimeout(90, TimeUnit.SECONDS)
+            .writeTimeout(90, TimeUnit.SECONDS)
             .build()
     }
 
@@ -127,6 +144,7 @@ object ApiProvider {
     @Singleton
     @MainRetrofit
     fun provideRetrofit(okHttpClient: OkHttpClient): Retrofit {
+        Log.d("PERF_TRACE", "Hilt provideRetrofit [Thread: ${Thread.currentThread().name}]")
         return Retrofit.Builder()
             .baseUrl(BASE_URL1)
             .client(okHttpClient)
@@ -142,15 +160,3 @@ object ApiProvider {
         return retrofit.create(ApiServices::class.java)
     }
 }
-
-
-data class RefreshTokenResponse(
-    @SerializedName("success")
-    val success: Boolean,
-
-    @SerializedName("message")
-    val message: String,
-
-    @SerializedName("accessToken")
-    val accessToken: String
-)

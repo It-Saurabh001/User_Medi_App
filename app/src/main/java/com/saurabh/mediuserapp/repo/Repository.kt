@@ -1,10 +1,12 @@
 package com.saurabh.mediuserapp.repo
 
 import android.util.Log
+import com.google.gson.Gson
 import com.saurabh.mediuserapp.common.ResultState
 import com.saurabh.mediuserapp.network.ApiServices
 import com.saurabh.mediuserapp.network.MainApiService
 import com.saurabh.mediuserapp.network.TokenManager
+import com.saurabh.mediuserapp.network.response.ApiErrorResponse
 import com.saurabh.mediuserapp.network.response.CreateOrderResponse
 import com.saurabh.mediuserapp.network.response.CreateUserResponse
 import com.saurabh.mediuserapp.network.response.GetAllProductResponse
@@ -19,14 +21,46 @@ import com.saurabh.mediuserapp.network.response.PasswordResetResponse
 import com.saurabh.mediuserapp.network.response.VerifyOtpResponse
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import retrofit2.Response
 import javax.inject.Inject
-
 
 class Repository @Inject constructor(
     @MainApiService private val apiServices: ApiServices,
     private val tokenManager: TokenManager
-){
-//    private val tokenManager = TokenManager.getInstance(context)
+) {
+    private fun parseErrorMessage(rawJson: String?): String? {
+        if (rawJson.isNullOrBlank()) return null
+        return try {
+            val errorResponse = Gson().fromJson(rawJson, ApiErrorResponse::class.java)
+            errorResponse?.displayMessage ?: rawJson
+        } catch (_: Exception) {
+            rawJson
+        }
+    }
+
+    private suspend fun <T> safeApiCall(
+        apiCall: suspend () -> Response<T>
+    ): Flow<ResultState<T>> = flow {
+        emit(ResultState.Loading)
+        try {
+            val response = apiCall()
+            if (response.isSuccessful) {
+                val body = response.body()
+                if (body != null) {
+                    emit(ResultState.Success(body))
+                } else {
+                    emit(ResultState.Error(Exception("Empty response body with HTTP ${response.code()}")))
+                }
+            } else {
+                val rawError = response.errorBody()?.string()
+                val parsedMessage = parseErrorMessage(rawError) ?: "Request failed with HTTP ${response.code()}"
+                emit(ResultState.Error(Exception(parsedMessage)))
+            }
+        } catch (e: Exception) {
+            emit(ResultState.Error(e))
+        }
+    }
+
     // ----------------------------------
     // CREATE USER (Signup)
     // ----------------------------------
@@ -37,24 +71,9 @@ class Repository @Inject constructor(
         email: String,
         pinCode: String,
         address: String
-    ): Flow<ResultState<CreateUserResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.createUser(name, password, phoneNumber, email, pinCode, address)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserRepository", "createUser success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserRepository", "createUser error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserRepository", "createUser exception: ${e.message}")
-        }
+    ): Flow<ResultState<CreateUserResponse>> = safeApiCall {
+        apiServices.createUser(name, password, phoneNumber, email, pinCode, address)
     }
-
 
     // ----------------------------------
     // LOGIN USER SAVE user_id & role (NOT tokens yet)
@@ -63,25 +82,13 @@ class Repository @Inject constructor(
         email: String,
         password: String
     ): Flow<ResultState<LoginUserResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.loginUser(email, password)
-            if (response.isSuccessful && response.body() != null) {
-                val body = response.body()!!
-                //ONLY SAVE user_id and role (tokens aayenge OTP verification ke baad)
-                body.user_id?.let { tokenManager.saveUserId(it) }
-                val role = body.role ?: "user" // Default to "user" if null
+        safeApiCall { apiServices.loginUser(email, password) }.collect { result ->
+            if (result is ResultState.Success) {
+                result.data.user_id?.let { tokenManager.saveUserId(it) }
+                val role = result.data.role ?: "user"
                 tokenManager.saveRole(role)
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserRepository", "loginUser success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserRepository", "loginUser error: $error")
             }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserRepository", "loginUser exception: ${e.message}")
+            emit(result)
         }
     }
 
@@ -92,56 +99,25 @@ class Repository @Inject constructor(
         userId: String,
         otp: String
     ): Flow<ResultState<VerifyOtpResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.verifyUserOtp(userId, otp)
-            if (response.isSuccessful && response.body() != null) {
-                val body = response.body()!!
-
-                // AB TOKENS SAVE KARO (according to your Flask API response)
-                val accessToken = body.access_token ?: ""
-                val refreshToken = body.refresh_token ?: ""
-                val role = body.role ?: "user"
-
+        safeApiCall { apiServices.verifyUserOtp(userId, otp) }.collect { result ->
+            if (result is ResultState.Success) {
+                val accessToken = result.data.access_token ?: ""
+                val refreshToken = result.data.refresh_token ?: ""
+                val role = result.data.role ?: "user"
                 tokenManager.saveTokens(accessToken, refreshToken, role, userId)
                 tokenManager.saveRole(role)
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserRepository", "verifyUserOtp success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserRepository", "verifyUserOtp error: $error")
             }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserRepository", "verifyUserOtp exception: ${e.message}")
+            emit(result)
         }
     }
-
-
-
 
     // ----------------------------------
     // REQUEST PASSWORD RESET OTP - NO TOKEN NEEDED
     // ----------------------------------
     suspend fun requestUserPasswordReset(
         email: String
-    ): Flow<ResultState<PasswordResetResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.requestUserPasswordReset(email)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserRepository", "requestUserPasswordReset success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserRepository", "requestUserPasswordReset error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserRepository", "requestUserPasswordReset exception: ${e.message}")
-        }
+    ): Flow<ResultState<PasswordResetResponse>> = safeApiCall {
+        apiServices.requestUserPasswordReset(email)
     }
 
     // ----------------------------------
@@ -151,88 +127,33 @@ class Repository @Inject constructor(
         userId: String,
         otp: String,
         newPassword: String
-    ): Flow<ResultState<PasswordResetOtpResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.resetUserPasswordWithOtp(userId, otp, newPassword)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserRepository", "resetUserPasswordWithOtp success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserRepository", "resetUserPasswordWithOtp error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserRepository", "resetUserPasswordWithOtp exception: ${e.message}")
-        }
+    ): Flow<ResultState<PasswordResetOtpResponse>> = safeApiCall {
+        apiServices.resetUserPasswordWithOtp(userId, otp, newPassword)
     }
 
     // ----------------------------------
-    // GET SPECIFIC USER (For Admin)
+    // GET SPECIFIC USER (For Admin / Self Profile)
     // ----------------------------------
     suspend fun getSpecificUser(
         userId: String
-    ): Flow<ResultState<GetSpecificUserResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.getSpecificUser(userId)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserRepository", "getSpecificUser success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserRepository", "getSpecificUser error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserRepository", "getSpecificUser exception: ${e.message}")
-        }
+    ): Flow<ResultState<GetSpecificUserResponse>> = safeApiCall {
+        apiServices.getSpecificUser(userId)
     }
 
     // ----------------------------------
     // GET ALL PRODUCTS
     // ----------------------------------
-    suspend fun getAllProducts(): Flow<ResultState<GetAllProductResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.getAllProducts()
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("ProductRepository", "getAppProducts success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("ProductRepository", "getAppProducts error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("ProductRepository", "getAppProducts exception: ${e.message}")
-        }
+    suspend fun getAllProducts(): Flow<ResultState<GetAllProductResponse>> = safeApiCall {
+        apiServices.getAllProducts()
     }
 
     // ----------------------------------
     // GET SPECIFIC PRODUCT
     // ----------------------------------
-
-    suspend fun getSpecificProduct(productId: String): Flow<ResultState<GetSpecificProductResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.getSpecificProduct(productId)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("ProductRepository", "getSpecificProduct success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("ProductRepository", "getSpecificProduct error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("ProductRepository", "getSpecificProduct exception: ${e.message}")
-        }
+    suspend fun getSpecificProduct(
+        productId: String
+    ): Flow<ResultState<GetSpecificProductResponse>> = safeApiCall {
+        apiServices.getSpecificProduct(productId)
     }
 
     // ----------------------------------
@@ -243,88 +164,35 @@ class Repository @Inject constructor(
         productId: String,
         quantity: String,
         message: String
-    ): Flow<ResultState<CreateOrderResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.createOrder(userId, productId, quantity, message)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("OrderRepository", "createOrder success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("OrderRepository", "createOrder error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("OrderRepository", "createOrder exception: ${e.message}")
-        }
+    ): Flow<ResultState<CreateOrderResponse>> = safeApiCall {
+        apiServices.createOrder(userId, productId, quantity, message)
     }
 
     // ----------------------------------
     // GET USER ORDERS
     // ----------------------------------
-
-    suspend fun getUserOrders(userId: String): Flow<ResultState<GetUsersOrdersResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.getUserOrders(userId)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserOrderRepository", "getUserOrders success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserOrderRepository", "getUserOrders error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserOrderRepository", "getUserOrders exception: ${e.message}")
-        }
+    suspend fun getUserOrders(
+        userId: String
+    ): Flow<ResultState<GetUsersOrdersResponse>> = safeApiCall {
+        apiServices.getUserOrders(userId)
     }
 
     // ----------------------------------
     // GET ORDER BY ID
     // ----------------------------------
-
-    suspend fun getOrderById(orderId: String): Flow<ResultState<GetOrderByIdResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.getOrderById(orderId)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserOrderRepository", "getOrderById success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserOrderRepository", "getOrderById error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserOrderRepository", "getOrderById exception: ${e.message}")
-        }
+    suspend fun getOrderById(
+        orderId: String
+    ): Flow<ResultState<GetOrderByIdResponse>> = safeApiCall {
+        apiServices.getOrderById(orderId)
     }
 
     // ----------------------------------
     // GET SELL HISTORY BY USER ID
     // ----------------------------------
-
-    suspend fun getSellHistoryByUserId(userId: String): Flow<ResultState<GetUserSellHistoryResponse>> = flow {
-        emit(ResultState.Loading)
-        try {
-            val response = apiServices.getSellHistoryByUserId(userId)
-            if (response.isSuccessful && response.body() != null) {
-                emit(ResultState.Success(response.body()!!))
-                Log.d("UserOrderRepository", "getSellHistoryByUserId success: ${response.body()}")
-            } else {
-                val error = response.errorBody()?.string() ?: "Unknown error"
-                emit(ResultState.Error(Exception(error)))
-                Log.e("UserOrderRepository", "getSellHistoryByUserId error: $error")
-            }
-        } catch (e: Exception) {
-            emit(ResultState.Error(e))
-            Log.e("UserOrderRepository", "getSellHistoryByUserId exception: ${e.message}")
-        }
+    suspend fun getSellHistoryByUserId(
+        userId: String
+    ): Flow<ResultState<GetUserSellHistoryResponse>> = safeApiCall {
+        apiServices.getSellHistoryByUserId(userId)
     }
 
     fun logout() {
@@ -347,6 +215,4 @@ class Repository @Inject constructor(
     fun getStoredToken(): String {
         return tokenManager.getAccessToken() ?: ""
     }
-
-
 }

@@ -1,5 +1,6 @@
 package com.saurabh.mediuserapp.network
 
+import android.util.Log
 import okhttp3.Interceptor
 import okhttp3.Response
 
@@ -16,7 +17,8 @@ class AuthInterceptor(private val tokenManager: TokenManager) : Interceptor {
             "/user/requestUserPasswordReset",
             "/user/resetUserPasswordWithOtp",
             "/admin/requestAdminPasswordReset",
-            "/admin/resetAdminPasswordWithOtp"
+            "/admin/resetAdminPasswordWithOtp",
+            "/admin/refreshToken"
         )
     }
 
@@ -46,8 +48,13 @@ class AuthInterceptor(private val tokenManager: TokenManager) : Interceptor {
 
         val response = chain.proceed(authenticatedRequest)
         println("Response code: ${response.code} for $path")
+        Log.d("TAG", "Response code: ${response.code} for $path")
         if (response.code == 401) {
             println("Received 401 for $path, token might be invalid or expired")
+        }
+        if (response.code == 422) {
+            Log.w("AuthInterceptor", "Received 422 for $path: corrupt or invalid JWT. Invalidating session.")
+            tokenManager.invalidateSession()
         }
         return response
     }

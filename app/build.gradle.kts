@@ -1,15 +1,31 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
-    alias(libs.plugins.kotlin.android)
+//    alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("com.google.devtools.ksp")
     id("com.google.dagger.hilt.android")
     kotlin("plugin.serialization") version "2.1.21"
 }
 
+val secretProperties = Properties()
+val secretPropertiesFile = rootProject.file("secrets.properties")
+
+if (secretPropertiesFile.exists()) {
+    secretPropertiesFile.inputStream().use {
+        secretProperties.load(it)
+    }
+}
+
+val wirelessDeviceUrl = secretProperties.getProperty(
+    "WirelessPhysicalDevice",
+    "http://10.0.2.2:5000/"
+)
+
 android {
     namespace = "com.saurabh.mediuserapp"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.saurabh.mediuserapp"
@@ -19,6 +35,11 @@ android {
         versionName = "1.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        buildConfigField(
+            "String",
+            "WirelessPhysicalDevice",
+            "\"$wirelessDeviceUrl\""
+        )
     }
 
     buildTypes {
@@ -34,12 +55,10 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-//        freeCompilerArgs = listOf("-XXLanguage:+PropertyParamAnnotationDefaultTargetMode")
-    }
     buildFeatures {
         compose = true
+        buildConfig = true
+
     }
     packaging {
         resources {
@@ -47,53 +66,48 @@ android {
         }
     }
 }
+kotlin{
+    compilerOptions {
+        jvmTarget.set( org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
+}
 
 dependencies {
 
-    // Android Core
+
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.activity.compose)
-
-    // Compose
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.ui)
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
-
-    // Navigation
-    implementation(libs.androidx.navigation.compose)
-
-    // Hilt
-    implementation(libs.hilt.android)
-    ksp(libs.hilt.android.compiler)
-
-    // Networking
-    implementation(libs.okhttp)
-    implementation(libs.logging.interceptor)
-    implementation(libs.retrofit)
-    implementation(libs.converter.gson)
-
-    // Coroutines
-    implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.kotlinx.coroutines.core)
-
-    // Other
-    implementation(libs.androidx.security.crypto)
-    implementation(libs.kotlinx.serialization.json)
-    implementation(libs.mpandroidchart)
-
-    // Testing
+    implementation(libs.androidx.compose.animation.core.lint)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)
-
-    // Debug
     debugImplementation(libs.androidx.ui.tooling)
     debugImplementation(libs.androidx.ui.test.manifest)
+
+    implementation(libs.retrofit)
+    implementation(libs.converter.gson)
+    implementation(libs.okhttp)
+    implementation(libs.hilt.android)
+    ksp(libs.hilt.android.compiler)
+
+
+    implementation("com.squareup.okhttp3:logging-interceptor:5.4.0")
+
+    implementation("androidx.navigation:navigation-compose:2.9.8")
+    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    implementation("com.github.PhilJay:MPAndroidChart:v3.1.0")
+    implementation("androidx.compose.material:material-icons-extended:1.7.8")
+    implementation("io.coil-kt:coil-compose:2.7.0")
+
+    implementation(libs.androidx.security.crypto)
+    implementation(libs.ucrop)
+    implementation(libs.dotenv.kotlin)
 
 }

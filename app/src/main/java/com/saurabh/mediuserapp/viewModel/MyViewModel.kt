@@ -14,10 +14,10 @@ import com.saurabh.mediuserapp.utils.screensState.CreateOrderState
 import com.saurabh.mediuserapp.utils.screensState.CreateUserState
 import com.saurabh.mediuserapp.utils.screensState.GetOrderByIdState
 import com.saurabh.mediuserapp.utils.screensState.GetSpecificProductState
-import com.saurabh.mediuserapp.utils.screensState.OrderState
+import com.saurabh.mediuserapp.utils.screensState.GetUserSellHistoryState
+import com.saurabh.mediuserapp.utils.screensState.GetUsersOrdersState
 import com.saurabh.mediuserapp.utils.screensState.PasswordResetOtpState
 import com.saurabh.mediuserapp.utils.screensState.PasswordResetState
-import com.saurabh.mediuserapp.utils.screensState.SellHistoryState
 import com.saurabh.mediuserapp.utils.screensState.VerifyOtpState
 import dagger.hilt.android.lifecycle.HiltViewModel
 import jakarta.inject.Inject
@@ -80,13 +80,13 @@ class MyViewModel @Inject constructor(
     private val _createOrderState = MutableStateFlow(CreateOrderState())
     val createOrderState = _createOrderState.asStateFlow()
 
-    private val _userOrdersState = MutableStateFlow(OrderState())
+    private val _userOrdersState = MutableStateFlow(GetUsersOrdersState())
     val userOrdersState = _userOrdersState.asStateFlow()
 
     private val _orderDetailState = MutableStateFlow(GetOrderByIdState())
     val orderDetailState = _orderDetailState.asStateFlow()
 
-    private val _sellHistoryState = MutableStateFlow(SellHistoryState())
+    private val _sellHistoryState = MutableStateFlow(GetUserSellHistoryState())
     val sellHistoryState = _sellHistoryState.asStateFlow()
 
     // ===========================
@@ -312,6 +312,109 @@ class MyViewModel @Inject constructor(
                 }
             }
         }
+    }
+
+    // ===========================
+    // ORDER FUNCTIONS
+    // ===========================
+
+    fun createOrder(userId: String, productId: String, quantity: String, message: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.createOrder(userId, productId, quantity, message).collect { result ->
+                when (result) {
+                    is ResultState.Loading -> _createOrderState.value =
+                        CreateOrderState(isLoading = true)
+
+                    is ResultState.Error -> _createOrderState.value =
+                        CreateOrderState(error = result.exception.message)
+
+                    is ResultState.Success -> {
+                        _createOrderState.value = CreateOrderState(success = result.data)
+                        // Refresh user orders automatically after successful creation
+                        getUserOrders(userId)
+                    }
+                }
+            }
+        }
+    }
+
+    fun getUserOrders(userId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.getUserOrders(userId).collect { result ->
+                when (result) {
+                    is ResultState.Loading -> _userOrdersState.value =
+                        GetUsersOrdersState(isLoading = true)
+
+                    is ResultState.Error -> _userOrdersState.value =
+                        GetUsersOrdersState(error = result.exception.message)
+
+                    is ResultState.Success -> _userOrdersState.value =
+                        GetUsersOrdersState(success = result.data)
+                }
+            }
+        }
+    }
+
+    fun getOrderById(orderId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.getOrderById(orderId).collect { result ->
+                when (result) {
+                    is ResultState.Loading -> _orderDetailState.value =
+                        GetOrderByIdState(isLoading = true)
+
+                    is ResultState.Error -> _orderDetailState.value =
+                        GetOrderByIdState(error = result.exception.message)
+
+                    is ResultState.Success -> _orderDetailState.value =
+                        GetOrderByIdState(success = result.data)
+                }
+            }
+        }
+    }
+
+    fun getSellHistoryByUserId(userId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.getSellHistoryByUserId(userId).collect { result ->
+                when (result) {
+                    is ResultState.Loading -> _sellHistoryState.value =
+                        GetUserSellHistoryState(isLoading = true)
+
+                    is ResultState.Error -> _sellHistoryState.value =
+                        GetUserSellHistoryState(error = result.exception.message)
+
+                    is ResultState.Success -> _sellHistoryState.value =
+                        GetUserSellHistoryState(success = result.data)
+                }
+            }
+        }
+    }
+
+    // ===========================
+    // RESET FUNCTIONS FOR ONE-TIME EVENTS
+    // ===========================
+
+    fun resetCreateUserState() {
+        _createUserState.value = CreateUserState()
+    }
+
+    fun resetLoginState() {
+        _loginUserState.value = LoginUserState()
+    }
+
+    fun resetVerifyOtpState() {
+        _verifyOtpState.value = VerifyOtpState()
+    }
+
+    fun resetPasswordResetState() {
+        _passwordResetState.value = PasswordResetState()
+    }
+
+    fun resetPasswordResetOtpState() {
+        _passwordResetOtpState.value = PasswordResetOtpState()
+    }
+
+    fun resetCreateOrderState() {
+        _createOrderState.value = CreateOrderState()
     }
 
     // ===========================

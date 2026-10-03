@@ -1,118 +1,110 @@
 package com.saurabh.mediuserapp.network
 
 import android.util.Log
+import dagger.Lazy
 import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
+import java.util.concurrent.locks.ReentrantLock
+import javax.inject.Inject
+import kotlin.concurrent.withLock
 
 
-class TokenAuthenticator(
+class TokenAuthenticator @Inject constructor(
     private val tokenManager: TokenManager,
-    private val tempApiService: ApiServices
+    private val apiServiceProvider: Lazy<ApiServices>
 ) : Authenticator {
 
+    private val refreshLock = ReentrantLock()
+
+
     override fun authenticate(route: Route?, response: Response): Request? {
+        Log.d("TAG", "Authenticator =>--------------------------------------------------------------")
+        Log.d("TAG", "authenticate() triggered, response code: ${response.code}")
 
-        // 1. Agar error 401 nahi hai, to hume kuch nahi karna
-        if (response.code != 401) {
+        if (response.code != 401) return null
+        if (responseCount(response) >= 2) {
+            Log.e("TAG", "Authenticator=>Already retried once — aborting, clearing session $response")
+            tokenManager.invalidateSession()
             return null
         }
-        // If response is 401 and we have a refresh token, try to refresh
-        Log.d("TokenAuthenticator", "Received 401, attempting token refresh")
-//        Refresh Token nikalo (TokenManager se)
         val refreshToken = tokenManager.getRefreshToken()
-        // Agar Refresh Token hi nahi hai, to User ko seedha Logout karo
+        Log.d("TAG", "Authenticator=>Retrieved refresh token: ${if (refreshToken.isNullOrEmpty()) "null/empty" else "present"}")
         if (refreshToken.isNullOrEmpty()) {
-            Log.e("TokenAuthenticator", "No refresh token available")
-            tokenManager.clearTokens()
+            Log.e("TAG", "Authenticator=>No refresh token available — clearing session")
+            tokenManager.invalidateSession()
             return null
         }
+        return refreshLock.withLock {
+            val currentStoredToken = tokenManager.getAccessToken()
+            val requestToken = response.request
+                .header("Authorization")
+                ?.removePrefix("Bearer ")
+                ?.trim()
 
-//      SYNCHRONIZED BLOCK
-        // Agar ek saath 4-5 API fail hoti hain, to ye block rokega ki refresh API baar-baar call na ho
-        synchronized(this) {
-            // Check karo: Kya kisi dusri thread ne token already update kar diya hai?
-            val newAccessToken = tokenManager.getAccessToken()
-            val requestAccessToken =
-                response.request.header("Authorization")?.replace("Bearer ", "")
+            Log.d("TAG", "Authenticator=>Current stored token: ${if (currentStoredToken.isNullOrEmpty()) "null/empty" else "present"}")
 
-            // Agar TokenManager wala token aur Request wala token alag hai,
-            // iska matlab token already refresh ho chuka hai. Bas retry karo.
-            if (newAccessToken != null && newAccessToken != requestAccessToken) {
-                return response.request.newBuilder()
-                    .header("Authorization", "Bearer $newAccessToken")
+
+            if (currentStoredToken != null && currentStoredToken != requestToken) {
+                // A concurrent thread already refreshed — reuse its result.
+                Log.d("TAG", "Authenticator=>Token already rotated by another thread, reusing")
+                return@withLock response.request.newBuilder()
+                    .header("Authorization", "Bearer $currentStoredToken")
                     .build()
             }
+            val newToken = refreshAccessToken(refreshToken)
 
-//                Retry Count Check (Infinite Loop se bachne ke liye)
-            if (responseCount(response) >= 2) {
-                tokenManager.clearTokens() // Retry limit over, logout
-                Log.e("TokenAuthenticator", "Already retried, clearing tokens")
-
-                return null
-            }
-
-//                API Call to Refresh Token
-            // runBlocking zaroori hai kyunki ye method background thread par hai par result sync chahiye
-            val refreshedToken = runBlocking {
-                refreshAccessToken(refreshToken)
-            }
-
-//                Result Handling
-            return if (refreshedToken != null) {
-                // Success: Sirf Access Token update karo (TokenManager ka method use kiya)
-                tokenManager.updateAccessToken(refreshedToken)
-                Log.d("TokenAuthenticator", "Token refreshed, retrying request")
-
-                // Retry Original Request with NEW Token
+            if (newToken != null) {
+                Log.d("TAG", "Authenticator=>Token refreshed successfully — retrying request")
                 response.request.newBuilder()
-                    .header("Authorization", "Bearer $refreshedToken")
+                    .header("Authorization", "Bearer $newToken")
                     .build()
             } else {
-                // Failure: Refresh Token bhi invalid/expire ho gaya
-                tokenManager.clearTokens() // Logout
-                Log.e("TokenAuthenticator", "Token refresh failed")
-
+                Log.e("TAG", "Authenticator=>Token refresh failed — invalidating session")
+                tokenManager.invalidateSession()
                 null
             }
-
         }
-
     }
 
     private fun refreshAccessToken(refreshToken: String): String? {
         return try {
-            Log.d("TokenAuthenticator", "Calling refresh token API")
+            Log.d("TAG", "Calling /admin/refreshToken endpoint")
 
-            val response = runBlocking {
-                tempApiService.refreshToken("Bearer $refreshToken")
-            }
+            val authApiService = apiServiceProvider.get()
+            val response = authApiService.refreshToken("Bearer $refreshToken").execute()
 
-            if (response.isSuccessful && response.body() != null) {
-                val newAccessToken = response.body()!!.accessToken
-                tokenManager.updateAccessToken(newAccessToken)
-                Log.d("TokenAuthenticator", "Access token updated successfully")
-                newAccessToken
+            val body = response.body()
+            if (response.isSuccessful && body != null) {
+                val newToken = body.accessToken
+                val newRefreshToken = body.refreshToken
+                val newRole = body.role
+                if (newToken.isNullOrBlank() || newRefreshToken.isNullOrBlank()) {
+                    Log.e("TAG", "Refresh response body had null/blank access_token")
+                    return null
+                }
+                tokenManager.updateTokens(newToken, newRefreshToken, newRole)
+                Log.d("TAG", "Authenticator=>Access token and refresh token rotated and persisted")
+                newToken
             } else {
-                Log.e("TokenAuthenticator", "Refresh token API failed: ${response.code()}")
+                Log.e("TAG", "Authenticator=>Refresh endpoint returned HTTP ${response.code()}: ${response.errorBody()?.string()}")
                 null
             }
         } catch (e: Exception) {
-            Log.e("TokenAuthenticator", "Exception during token refresh: ${e.message}")
+            Log.e("TAG", "Exception calling refresh endpoint: ${e.message}", e)
             null
-        }
+        } as String?
     }
 
     private fun responseCount(response: Response): Int {
-        var result = 1
-        var priorResponse = response.priorResponse
-        while (priorResponse != null) {
-            result++
-            priorResponse = priorResponse.priorResponse
+        var count = 1
+        var prior = response.priorResponse
+        while (prior != null) {
+            count++
+            prior = prior.priorResponse
         }
-        return result
+        return count
     }
-
 }

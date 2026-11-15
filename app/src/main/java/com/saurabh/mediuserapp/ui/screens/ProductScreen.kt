@@ -61,7 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
 import androidx.navigation.compose.rememberNavController
-import com.saurabh.mediuserapp.network.response.ProductItem
+import com.saurabh.mediuserapp.data.v1.dto.ProductDto
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 import java.text.NumberFormat
 import java.util.Locale
@@ -120,14 +120,14 @@ fun ProductScreen(viewModel: MyViewModel, navController: NavController) {
                 }
             }
             productState.value.success != null->{
-                Log.d("TAG", "ProductScreen:success :-> ${productState.value.success!!.products.size} ")
+                Log.d("TAG", "ProductScreen:success :-> ${productState.value.success!!.items.size} ")
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
 
                 ) {
                     ProductListScreen(
-                        productState.value.success!!.products,
+                        productState.value.success!!.items,
                         navController,
                         modifier = Modifier.background(Color(0xFFffffff)),
                         viewModel
@@ -139,7 +139,7 @@ fun ProductScreen(viewModel: MyViewModel, navController: NavController) {
 }
 
 @Composable
-fun ProductListScreen(products : List<ProductItem>,navController: NavController,modifier: Modifier = Modifier,viewModel: MyViewModel
+fun ProductListScreen(products : List<ProductDto>,navController: NavController,modifier: Modifier = Modifier,viewModel: MyViewModel
 ) {
 
     var searchTerm by remember { mutableStateOf("") }
@@ -296,13 +296,14 @@ fun ProductListScreen(products : List<ProductItem>,navController: NavController,
 @Composable
 fun previe() {
     val navController = rememberNavController()
-    val products = ProductItem(
-        Product_id = "PROD_d1fc4410",
-        id = 5,
-        name = "Vitamin D3 Tablets",
-        price = 35.00,
-        category = "Tablet",
-        stock = 75
+    val now = java.time.Instant.now()
+    val products = ProductDto(
+        productId = "PROD_d1fc4410", name = "Vitamin D3 Tablets", genericName = "", brandName = "",
+        manufacturer = "", category = "Tablet", dosageForm = "Tablet", strength = "", packSize = "",
+        unit = "strip", hsnCode = "", gstPercent = 12.0, price = 35.00, mrp = 40.0, purchasePrice = null,
+        scheduleType = "OTC", requiresPrescription = false, storageConditions = "", reorderLevel = 10,
+        barcode = "", imageUrl = null, isActive = true, stock = 75, sellableStock = 75, inStock = true,
+        createdAt = now, updatedAt = now
     )
     EachProductCard(products,navController,Color(0xFFD3C4FA))
 
@@ -310,7 +311,7 @@ fun previe() {
 
 
 @Composable
-fun EachProductCard(medicine: ProductItem,navController: NavController,cardBgColor : Color){
+fun EachProductCard(medicine: ProductDto,navController: NavController,cardBgColor : Color){
     ElevatedCard ( modifier = Modifier
         .fillMaxWidth()
         .shadow(2.dp, RoundedCornerShape(8.dp)),

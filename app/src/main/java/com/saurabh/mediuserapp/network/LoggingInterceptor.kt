@@ -10,6 +10,25 @@ import java.util.concurrent.TimeUnit
  * A custom Interceptor that logs network activity to AppLogger.
  */
 class LoggingInterceptor : Interceptor {
+
+    companion object {
+        private val SECRET_JSON = Regex(
+            """("(?:access_token|refresh_token|token|otp|password|new_password)"\s*:\s*)"[^"]*"""" ,
+            RegexOption.IGNORE_CASE
+        )
+        private val SECRET_FORM = Regex(
+            """((?:^|[&\s])(?:access_token|refresh_token|token|otp|password|new_password)=)[^&\s]*""",
+            RegexOption.IGNORE_CASE
+        )
+        private val BEARER = Regex("""(Bearer\s+)[A-Za-z0-9._\-]+""")
+
+        /** Masks tokens, OTPs and passwords in a log line / body. */
+        fun redact(text: String?): String = text.orEmpty()
+            .replace(SECRET_JSON, "$1\"***\"")
+            .replace(SECRET_FORM, "$1***")
+            .replace(BEARER, "$1***")
+    }
+
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
         val startTime = System.nanoTime()
@@ -25,8 +44,10 @@ class LoggingInterceptor : Interceptor {
         AppLogger.logRequest(
             method = request.method,
             url = request.url.toString(),
-            headers = request.headers.toMultimap().mapValues { it.value.joinToString(",") },
-            body = if (request.url.toString().contains("password", true)) "[PROTECTED]" else bodyString
+            headers = request.headers.toMultimap().mapValues {
+                if (it.key.equals("Authorization", true)) "***" else it.value.joinToString(",")
+            },
+            body = if (request.url.toString().contains("password", true)) "[PROTECTED]" else redact(bodyString)
         )
 
         val response = try {
@@ -49,7 +70,7 @@ class LoggingInterceptor : Interceptor {
             code = response.code,
             url = response.request.url.toString(),
             durationMs = durationMs,
-            body = responseBodyString
+            body = redact(responseBodyString)
         )
 
         return response

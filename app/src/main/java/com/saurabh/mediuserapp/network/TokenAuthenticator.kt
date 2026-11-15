@@ -1,102 +1,130 @@
 package com.saurabh.mediuserapp.network
 
 import android.util.Log
+import com.saurabh.mediuserapp.data.v1.api.AuthApi
+import com.saurabh.mediuserapp.data.v1.core.AppEvent
+import com.saurabh.mediuserapp.data.v1.core.AppEvents
+import com.saurabh.mediuserapp.data.v1.error.ErrorBody
+import com.saurabh.mediuserapp.data.v1.error.ErrorCode
 import dagger.Lazy
-import kotlinx.coroutines.runBlocking
 import okhttp3.Authenticator
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.Route
-import java.util.concurrent.locks.ReentrantLock
 import javax.inject.Inject
-import kotlin.concurrent.withLock
-
 
 class TokenAuthenticator @Inject constructor(
     private val tokenManager: TokenManager,
-    private val apiServiceProvider: Lazy<ApiServices>
+    private val apiServiceProvider: Lazy<ApiServices>,
+    private val v1AuthApi: Lazy<AuthApi>,
+    private val appEvents: AppEvents
 ) : Authenticator {
 
-    private val refreshLock = ReentrantLock()
-
+    companion object {
+        private const val TAG = "TAG"
+        private const val MAX_ATTEMPTS = 2
+        private const val PEEK_BYTES = 64L * 1024
+    }
 
     override fun authenticate(route: Route?, response: Response): Request? {
-        Log.d("TAG", "Authenticator =>--------------------------------------------------------------")
-        Log.d("TAG", "authenticate() triggered, response code: ${response.code}")
-
+        Log.d(TAG, "authenticate() triggered, response code: ${response.code}")
         if (response.code != 401) return null
-        if (responseCount(response) >= 2) {
-            Log.e("TAG", "Authenticator=>Already retried once — aborting, clearing session $response")
-            tokenManager.invalidateSession()
-            return null
-        }
-        val refreshToken = tokenManager.getRefreshToken()
-        Log.d("TAG", "Authenticator=>Retrieved refresh token: ${if (refreshToken.isNullOrEmpty()) "null/empty" else "present"}")
-        if (refreshToken.isNullOrEmpty()) {
-            Log.e("TAG", "Authenticator=>No refresh token available — clearing session")
-            tokenManager.invalidateSession()
-            return null
-        }
-        return refreshLock.withLock {
-            val currentStoredToken = tokenManager.getAccessToken()
-            val requestToken = response.request
-                .header("Authorization")
-                ?.removePrefix("Bearer ")
-                ?.trim()
-
-            Log.d("TAG", "Authenticator=>Current stored token: ${if (currentStoredToken.isNullOrEmpty()) "null/empty" else "present"}")
-
-
-            if (currentStoredToken != null && currentStoredToken != requestToken) {
-                // A concurrent thread already refreshed — reuse its result.
-                Log.d("TAG", "Authenticator=>Token already rotated by another thread, reusing")
-                return@withLock response.request.newBuilder()
-                    .header("Authorization", "Bearer $currentStoredToken")
-                    .build()
-            }
-            val newToken = refreshAccessToken(refreshToken)
-
-            if (newToken != null) {
-                Log.d("TAG", "Authenticator=>Token refreshed successfully — retrying request")
-                response.request.newBuilder()
-                    .header("Authorization", "Bearer $newToken")
-                    .build()
-            } else {
-                Log.e("TAG", "Authenticator=>Token refresh failed — invalidating session")
-                tokenManager.invalidateSession()
-                null
-            }
-        }
+        return if (V1Paths.isV1(response.request)) authenticateV1(response) else authenticateLegacy(response)
     }
 
-    private fun refreshAccessToken(refreshToken: String): String? {
-        return try {
-            Log.d("TAG", "Calling /admin/refreshToken endpoint")
+    // ---------------- v1 ----------------
 
-            val authApiService = apiServiceProvider.get()
-            val response = authApiService.refreshToken("Bearer $refreshToken").execute()
+    private fun authenticateV1(response: Response): Request? {
+        val request = response.request
+        // Public calls (login etc.) and the refresh call itself never trigger a refresh.
+        if (V1Paths.isPublic(request) || V1Paths.isRefresh(request)) return null
+        val requestToken = request.bearerToken() ?: return null
 
-            val body = response.body()
-            if (response.isSuccessful && body != null) {
-                val newToken = body.accessToken
-                val newRefreshToken = body.refreshToken
-                val newRole = body.role
-                if (newToken.isNullOrBlank() || newRefreshToken.isNullOrBlank()) {
-                    Log.e("TAG", "Refresh response body had null/blank access_token")
-                    return null
-                }
-                tokenManager.updateTokens(newToken, newRefreshToken, newRole)
-                Log.d("TAG", "Authenticator=>Access token and refresh token rotated and persisted")
-                newToken
-            } else {
-                Log.e("TAG", "Authenticator=>Refresh endpoint returned HTTP ${response.code()}: ${response.errorBody()?.string()}")
-                null
-            }
-        } catch (e: Exception) {
-            Log.e("TAG", "Exception calling refresh endpoint: ${e.message}", e)
+        val code = ErrorCode.from(
+            ErrorBody.parse(runCatching { response.peekBody(PEEK_BYTES).string() }.getOrNull())?.code
+        )
+        if (code != ErrorCode.TOKEN_EXPIRED || responseCount(response) >= MAX_ATTEMPTS) {
+            Log.w(TAG, "Authenticator(v1)=> 401 $code, giving up")
+            endSession()
+            return null
+        }
+
+        val newToken = tokenManager.refreshSingleFlight(requestToken) { refreshToken -> refreshV1(refreshToken) }
+        if (newToken == null) {
+            Log.e(TAG, "Authenticator(v1)=> refresh failed — invalidating session")
+            endSession()
+            return null
+        }
+        return request.newBuilder().header("Authorization", "Bearer $newToken").build()
+    }
+
+    private fun refreshV1(refreshToken: String): TokenBundle? = try {
+        val res = v1AuthApi.get().refreshCall("Bearer $refreshToken").execute()
+        val data = res.body()?.data
+        if (res.isSuccessful && data != null) {
+            TokenBundle(
+                accessToken = data.accessToken,
+                refreshToken = data.refreshToken,
+                role = data.role,
+                accountId = data.accountId,
+                accountType = data.accountType,
+                expiresInSeconds = data.expiresIn
+            )
+        } else {
+            Log.e(TAG, "Authenticator(v1)=> refresh HTTP ${res.code()}")
             null
-        } as String?
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Authenticator(v1)=> refresh exception: ${e.message}", e)
+        null
     }
+
+    private fun endSession() {
+        tokenManager.invalidateSession()
+        appEvents.emit(AppEvent.SessionInvalid)
+    }
+
+    // ---------------- legacy (unchanged behaviour) ----------------
+
+    private fun authenticateLegacy(response: Response): Request? {
+        if (responseCount(response) >= MAX_ATTEMPTS) {
+            Log.e(TAG, "Authenticator=>Already retried once — aborting, clearing session $response")
+            tokenManager.invalidateSession()
+            return null
+        }
+        if (tokenManager.getRefreshToken().isNullOrEmpty()) {
+            Log.e(TAG, "Authenticator=>No refresh token available — clearing session")
+            tokenManager.invalidateSession()
+            return null
+        }
+        val newToken = tokenManager.refreshSingleFlight(response.request.bearerToken()) { refreshLegacy(it) }
+        return if (newToken != null) {
+            response.request.newBuilder().header("Authorization", "Bearer $newToken").build()
+        } else {
+            Log.e(TAG, "Authenticator=>Token refresh failed — invalidating session")
+            tokenManager.invalidateSession()
+            null
+        }
+    }
+
+    private fun refreshLegacy(refreshToken: String): TokenBundle? = try {
+        val res = apiServiceProvider.get().refreshToken("Bearer $refreshToken").execute()
+        val body = res.body()
+        val access = body?.accessToken
+        val refresh = body?.refreshToken
+        if (res.isSuccessful && !access.isNullOrBlank() && !refresh.isNullOrBlank()) {
+            TokenBundle(accessToken = access, refreshToken = refresh, role = body.role)
+        } else {
+            Log.e(TAG, "Authenticator=>Refresh endpoint returned HTTP ${res.code()}")
+            null
+        }
+    } catch (e: Exception) {
+        Log.e(TAG, "Exception calling refresh endpoint: ${e.message}", e)
+        null
+    }
+
+    private fun Request.bearerToken(): String? =
+        header("Authorization")?.removePrefix("Bearer ")?.trim()?.takeIf { it.isNotEmpty() }
 
     private fun responseCount(response: Response): Int {
         var count = 1

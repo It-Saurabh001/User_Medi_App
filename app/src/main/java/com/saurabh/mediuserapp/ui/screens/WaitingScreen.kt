@@ -32,10 +32,10 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
     val userid = remember { mutableStateOf("") }
     val userState = viewModel.specificUserState.collectAsState()
     LaunchedEffect(key1 = Unit) {
-        viewModel.getSpecificUser(userId)
+        viewModel.getSpecificUser()
     }
     LaunchedEffect(userState) {
-        viewModel.getSpecificUser(userId)
+        viewModel.getSpecificUser()
     }
     Scaffold (modifier = Modifier.fillMaxSize()) { innerpadding ->
         when {
@@ -73,7 +73,7 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
             }
 
             userState.value.success != null -> {
-                val currentUser = userState.value.success?.user
+                val currentUser = userState.value.success
                 if (currentUser?.isApproved == false){
                     Column(
                         modifier = Modifier
@@ -89,7 +89,7 @@ fun WaitingScreen(userId: String, viewModel: MyViewModel) {
                         Log.d("TAG", "WaitingScreen: success")
 
                         Button(onClick = {
-                            viewModel.getSpecificUser(userId)           // this but rerun api and refresh the api
+                            viewModel.getSpecificUser()           // this but rerun api and refresh the api
                         }) {
                             Text(text = "Refresh")
                         }

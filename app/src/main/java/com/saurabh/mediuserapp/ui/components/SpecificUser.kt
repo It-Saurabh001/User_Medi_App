@@ -12,22 +12,22 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
-import com.saurabh.mediuserapp.network.response.User
+import com.saurabh.mediuserapp.data.v1.dto.UserDto
 
 
 @Composable
-fun SpecificUser(user : User) {
+fun SpecificUser(user : UserDto) {
     val userDetails = listOf(
-        "ID" to user.id.toString(),
-        "User ID" to user.user_id.toString(),
-        "Password" to user.password.toString(),
-        "Date of Account Creation" to user.date_of_account_creation.toString(),
+        "ID" to "-",
+        "User ID" to user.userId,
+        "Password" to "-",
+        "Date of Account Creation" to user.createdAt.toString(),
         "isApproved" to user.isApproved.toString(),
-        "Block" to user.block.toString(),
+        "Block" to user.isBlocked.toString(),
         "Name" to user.name.toString(),
-        "Phone Number" to user.phone_number.toString(),
+        "Phone Number" to user.phoneNumber.toString(),
         "Email" to user.email.toString(),
-        "Pin Code" to user.pin_code.toString(),
+        "Pin Code" to user.pinCode.toString(),
         "Address" to user.address.toString(),
 
         )

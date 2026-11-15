@@ -63,9 +63,9 @@ fun ForgotPasswordScreen(
         state.success?.let { response ->
             if (!navigated) {
                 navigated = true
-                Log.d(TAG, "ForgotPassword SUCCESS ✅ message=${response.message}, user_id=${response.user_id}")
+                Log.d(TAG, "ForgotPassword SUCCESS ✅ otp_expires_in=${response.otpExpiresIn}")
                 Toast.makeText(context, "OTP sent to your email!", Toast.LENGTH_SHORT).show()
-                response.user_id?.let { uid ->
+                email.takeIf { it.isNotBlank() }?.let { uid ->
                     Log.d(TAG, "Navigating to ForgotPasswordOtpRoutes with userId=$uid")
                     navController.navigate(Routes.ForgotPasswordOtpRoutes(userId = uid)) {
                         launchSingleTop = true

@@ -284,8 +284,7 @@ fun SignUp(viewModel: MyViewModel, navController: NavHostController) {
                             phoneNumber = phoneNumber,
                             email = email,
                             pinCode = pinCode,
-                            address = address,
-                            role = "user"
+                            address = address
                         )
                     },
                     modifier = Modifier

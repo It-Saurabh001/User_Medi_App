@@ -55,6 +55,9 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
+    testOptions {
+        unitTests.isReturnDefaultValues = true
+    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -84,6 +87,7 @@ dependencies {
     implementation(libs.androidx.material3)
     implementation(libs.androidx.compose.animation.core.lint)
     testImplementation(libs.junit)
+    testImplementation(libs.mockwebserver)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))

@@ -1,9 +1,11 @@
 package com.saurabh.mediuserapp.utils.screensState
 
-import com.saurabh.mediuserapp.network.response.CreateUserResponse
+import com.saurabh.mediuserapp.data.v1.dto.UserDto
+import com.saurabh.mediuserapp.data.v1.error.AppError
 
 data class CreateUserState(
     val isLoading: Boolean = false,
-    val success: CreateUserResponse? = null,
-    val error: String? = null
+    val success: UserDto? = null,
+    val error: String? = null,
+    val appError: AppError? = null
 )

@@ -71,7 +71,7 @@ fun ResetPasswordScreen(
         state.success?.let { response ->
             if (!navigated) {
                 navigated = true
-                Log.d(TAG, "ResetPassword SUCCESS ✅ message=${response.message}, status=${response.status}")
+                Log.d(TAG, "ResetPassword SUCCESS ✅ $response")
                 Log.d(TAG, "Clearing forgot-password back stack — navigating to SignInRoutes")
                 Toast.makeText(context, "Password reset! Please sign in with your new password.", Toast.LENGTH_LONG).show()
                 navController.navigate(Routes.SignInRoutes) {
@@ -196,7 +196,7 @@ fun ResetPasswordScreen(
                             }
 
                             Log.d(TAG, "ResetPassword REQUEST — userId=$userId, otp=$otp")
-                            viewModel.resetPasswordOtp(userId = userId, otp = otp, newPassword = newPassword)
+                            viewModel.resetPasswordOtp(email = userId, otp = otp, newPassword = newPassword)
                         }
                     )
                 }

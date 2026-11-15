@@ -22,23 +22,22 @@ class AuthInterceptor(private val tokenManager: TokenManager) : Interceptor {
         )
     }
 
-
     override fun intercept(chain: Interceptor.Chain): Response {
         val originalRequest = chain.request()
         val path = originalRequest.url.encodedPath
+        if (V1Paths.isV1Path(path) || V1Paths.isHealth(path)) return interceptV1(chain)
+
         // Check if current URL is excluded
-        val isExcluded = EXCLUDED_PATHS.any{path.startsWith(it)}
+        val isExcluded = EXCLUDED_PATHS.any { path.startsWith(it) }
         // If excluded or no token, send request as is
         val token = tokenManager.getAccessToken()
         val hasValidToken = !token.isNullOrBlank()
         println("Has valid token: $hasValidToken, Is excluded: $isExcluded")
-        // If excluded or no valid token, proceed without aut
 
         if (isExcluded || !hasValidToken) {
             return chain.proceed(originalRequest)
         }
 
-        // Add token to request
         println("Adding brarer token ")
 
         // Add JWT token to Authorization header
@@ -59,7 +58,19 @@ class AuthInterceptor(private val tokenManager: TokenManager) : Interceptor {
         return response
     }
 
-
-
-
+    /**
+     * v1: Bearer access token except public paths; auth/refresh sends the REFRESH token.
+     * An Authorization header already set by the caller is never overwritten.
+     */
+    private fun interceptV1(chain: Interceptor.Chain): Response {
+        val request = chain.request()
+        if (request.header("Authorization") != null || V1Paths.isPublic(request)) {
+            return chain.proceed(request)
+        }
+        val token = if (V1Paths.isRefresh(request)) tokenManager.getRefreshToken() else tokenManager.getAccessToken()
+        if (token.isNullOrBlank()) return chain.proceed(request)
+        return chain.proceed(
+            request.newBuilder().header("Authorization", "Bearer $token").build()
+        )
+    }
 }

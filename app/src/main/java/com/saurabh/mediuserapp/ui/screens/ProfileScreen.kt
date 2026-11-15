@@ -86,7 +86,7 @@ fun ProfileScreen(navController: NavController, viewModel: MyViewModel) {
                     onClick = {
                         showLogoutDialog = false
                         Log.d(PROFILE_TAG, "Logout CONFIRMED — calling viewModel.setUserLoggedOut()")
-                        viewModel.setUserLoggedOut()
+                        viewModel.logout()
                         // Navigation handled by the LaunchedEffect above watching isLoggedIn
                     },
                     colors = ButtonDefaults.buttonColors(

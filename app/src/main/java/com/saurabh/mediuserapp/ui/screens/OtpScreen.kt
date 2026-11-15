@@ -80,10 +80,8 @@ fun OtpScreen(
             if (!navigated) {
                 navigated = true
                 Log.d(OTP_TAG, "VerifyOTP SUCCESS ✅")
-                Log.d(OTP_TAG, "  access_token : ${response.access_token}")
-                Log.d(OTP_TAG, "  refresh_token: ${response.refresh_token}")
                 Log.d(OTP_TAG, "  role         : ${response.role}")
-                Log.d(OTP_TAG, "  message      : ${response.message}")
+                Log.d(OTP_TAG, "  account_id   : ${response.accountId}")
                 Log.d(OTP_TAG, "Tokens saved — navigating to ProductRoutes (clearing entire back stack)")
 
                 Toast.makeText(context, "Verified! Welcome 🎉", Toast.LENGTH_SHORT).show()

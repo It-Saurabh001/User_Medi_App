@@ -83,7 +83,7 @@ fun SignIn(viewModel: MyViewModel, navController: NavHostController) {
                 navigated = true
                 AppLogger.i(AppLogger.TAG_UI, "Login SUCCESS, navigating to OTP")
                 Toast.makeText(context, "OTP sent! Please verify.", Toast.LENGTH_SHORT).show()
-                navController.navigate(Routes.VerifyOtpRoutes(userId = response.user_id)) {
+                navController.navigate(Routes.VerifyOtpRoutes(userId = response.accountId)) {
                     popUpTo(Routes.SignInRoutes) { inclusive = true }
                 }
             }

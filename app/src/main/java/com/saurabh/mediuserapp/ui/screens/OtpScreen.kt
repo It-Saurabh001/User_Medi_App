@@ -1,267 +1,347 @@
 package com.saurabh.mediuserapp.ui.screens
 
-import com.saurabh.mediuserapp.utils.AppLogger
-import com.saurabh.mediuserapp.utils.logAction
-import android.util.Log
-import android.widget.Toast
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
+import android.os.SystemClock
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.border
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.outlined.CheckCircle
+import androidx.compose.material.icons.outlined.ContentPaste
+import androidx.compose.material.icons.outlined.MarkEmailRead
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalClipboard
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import com.saurabh.mediuserapp.ui.components.AnimatedAuthContent
-import com.saurabh.mediuserapp.ui.components.AuthButton
-import com.saurabh.mediuserapp.ui.components.AuthHeader
-import com.saurabh.mediuserapp.ui.components.LoadingOverlay
+import com.saurabh.mediuserapp.data.v1.core.UiState
+import com.saurabh.mediuserapp.data.v1.error.AppError
+import com.saurabh.mediuserapp.data.v1.error.ErrorCode
+import com.saurabh.mediuserapp.ui.components.LinkButton
+import com.saurabh.mediuserapp.ui.components.shadeColor
 import com.saurabh.mediuserapp.ui.nav.Routes
+import com.saurabh.mediuserapp.ui.theme.Blue500
+import com.saurabh.mediuserapp.ui.theme.Shades
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
-private const val OTP_TAG = "OtpScreen"
+private const val DEFAULT_OTP_LENGTH = 6
+private const val DEFAULT_OTP_TTL_S = 300
+private const val DEFAULT_OTP_MAX_ATTEMPTS = 5
+private const val CUSTOMER_REQUIRED = "Customer account required"
 
-/**
- * OTP Verification Screen — used after login.
- *
- * The backend sends an OTP to the user's registered contact after login.
- * This screen verifies it via [MyViewModel.verifyUserOtp].
- *
- * Navigation on success:
- *   → ProductRoutes with popUpTo(0) { inclusive = true }
- *   This clears the ENTIRE back stack so the user can NEVER back-press to auth screens.
- *
- * @param userId  Received from [LoginUserResponse.user_id]
- */
 @Composable
-fun OtpScreen(
-    userId: String,
-    viewModel: MyViewModel,
-    navController: NavHostController
-) {
-    LaunchedEffect(Unit) { AppLogger.i(AppLogger.TAG_UI, "OtpScreen ENTERED composition") }
-    SideEffect { AppLogger.v(AppLogger.TAG_UI, "OtpScreen recomposed") }
+fun OtpScreen(accountId: String, viewModel: MyViewModel, navController: NavHostController) {
+    val configState by viewModel.appConfigState.collectAsStateWithLifecycle()
+    val otpConfig = (configState as? UiState.Success)?.data?.otp
+    val otpLength = otpConfig?.length?.takeIf { it in 4..8 } ?: DEFAULT_OTP_LENGTH
+    val ttlSeconds = otpConfig?.expiresIn?.takeIf { it > 0 } ?: DEFAULT_OTP_TTL_S
+    val maxAttempts = otpConfig?.maxAttempts?.takeIf { it > 0 } ?: DEFAULT_OTP_MAX_ATTEMPTS
 
-    val context = LocalContext.current
-    val state by viewModel.verifyOtpState.collectAsState()
+    val state by viewModel.verifyOtpState.collectAsStateWithLifecycle()
+    val busy = state.isLoading
+    val haptics = LocalHapticFeedback.current
+    val clipboard = LocalClipboard.current
+    val pasteScope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
 
-    var otp by remember { mutableStateOf("") }
-    var isResendEnabled by remember { mutableStateOf(false) }
-    var timeLeft by remember { mutableStateOf(60) }
-    // Guard flag — prevents duplicate navigation on recomposition
-    var navigated by remember { mutableStateOf(false) }
+    var otp by rememberSaveable { mutableStateOf("") }
+    var otpError by rememberSaveable { mutableStateOf<String?>(null) }
+    var failedAttempts by rememberSaveable { mutableIntStateOf(0) }
+    val deadline by rememberSaveable { mutableLongStateOf(SystemClock.elapsedRealtime() + ttlSeconds * 1000L) }
+    var secondsLeft by remember { mutableIntStateOf(ttlSeconds) }
+    var verified by rememberSaveable { mutableStateOf(false) }
+    val expired = secondsLeft <= 0
 
-    Log.d(OTP_TAG, "OtpScreen CREATED — userId=$userId")
+    fun backToLogin(message: String) {
+        runCatching {
+            navController.getBackStackEntry(Routes.SignInRoutes).savedStateHandle[AUTH_MESSAGE_KEY] = message
+            navController.popBackStack(Routes.SignInRoutes, inclusive = false)
+        }.onFailure {
+            navController.navigate(Routes.SignInRoutes) { popUpTo(0) { inclusive = true } }
+        }
+    }
 
-    // ── State handling ─────────────────────────────────────────────────────
+    fun verify() {
+        if (busy) return
+        when {
+            accountId.isBlank() -> backToLogin("Session expired. Sign in again.")
+            expired -> otpError = "Code expired. Request a new one."
+            otp.length != otpLength -> {
+                otpError = "Enter all $otpLength digits"
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            }
+            else -> {
+                focusManager.clearFocus()
+                viewModel.verifyUserOtp(accountId, otp)
+            }
+        }
+    }
 
-    LoadingOverlay(isVisible = state.isLoading)
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
 
-    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(deadline) {
+        while (true) {
+            secondsLeft = ((deadline - SystemClock.elapsedRealtime()) / 1000L).toInt().coerceAtLeast(0)
+            if (secondsLeft == 0) break
+            delay(1000L)
+        }
+    }
+
     LaunchedEffect(state.error) {
-        state.error?.let { err ->
-            AppLogger.e(AppLogger.TAG_UI, "VerifyOTP ERROR state received: $err")
-            snackbarHostState.showSnackbar(message = err, duration = SnackbarDuration.Long)
+        val error = state.error ?: return@LaunchedEffect
+        val appError = state.appError
+        val code = (appError as? AppError.Api)?.code
+        viewModel.resetVerifyOtpState()
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        otp = ""
+        when {
+            appError == null && error == CUSTOMER_REQUIRED -> backToLogin(error)
+            code == ErrorCode.ACCOUNT_NOT_APPROVED ->
+                navController.navigate(Routes.WaitingRoutes()) {
+                    popUpTo(Routes.SignInRoutes) { inclusive = false }
+                    launchSingleTop = true
+                }
+            code == ErrorCode.ACCOUNT_BLOCKED ->
+                backToLogin("Your account has been blocked. Please contact the pharmacy.")
+            code == ErrorCode.RATE_LIMITED -> backToLogin("Too many attempts. Sign in again.")
+            else -> {
+                failedAttempts++
+                if (failedAttempts >= maxAttempts) backToLogin("Too many attempts. Sign in again.")
+                else otpError = appError.fieldError("otp") ?: error
+            }
         }
     }
 
     LaunchedEffect(state.success) {
-        state.success?.let { response ->
-            if (!navigated) {
-                navigated = true
-                Log.d(OTP_TAG, "VerifyOTP SUCCESS ✅")
-                Log.d(OTP_TAG, "  role         : ${response.role}")
-                Log.d(OTP_TAG, "  account_id   : ${response.accountId}")
-                Log.d(OTP_TAG, "Tokens saved — navigating to ProductRoutes (clearing entire back stack)")
-
-                Toast.makeText(context, "Verified! Welcome 🎉", Toast.LENGTH_SHORT).show()
-
-                navController.navigate(Routes.ProductRoutes) {
-                    // ✅ KEY: popUpTo(0) clears EVERY destination — auth screens gone
-                    popUpTo(0) { inclusive = true }
-                    launchSingleTop = true
-                }
+        val response = state.success ?: return@LaunchedEffect
+        verified = true
+        viewModel.resetVerifyOtpState()
+        if (response.accessToken.isNotBlank()) {
+            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            delay(600L)
+            navController.navigate(Routes.ProductRoutes) {
+                popUpTo(0) { inclusive = true }
+                launchSingleTop = true
             }
+        } else {
+            verified = false
+            otpError = "Invalid code, please try again"
         }
     }
-
-    // ── Countdown timer for Resend button ──────────────────────────────────
-    LaunchedEffect(Unit) {
-        Log.d(OTP_TAG, "Countdown timer started for userId=$userId")
-        while (timeLeft > 0) {
-            delay(1000L)
-            timeLeft--
-        }
-        isResendEnabled = true
-        Log.d(OTP_TAG, "Countdown finished — Resend button enabled")
-    }
-
-    // ── UI ─────────────────────────────────────────────────────────────────
 
     Scaffold(
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = MaterialTheme.colorScheme.background
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        topBar = { AuthTopBar("Verify code") { navController.navigateUp() } }
     ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-        ) {
-            AnimatedAuthContent(delayMillis = 0) {
-                AuthHeader(
-                    title = "Verify OTP",
-                    subtitle = "Enter the 6-digit code sent to your registered contact"
+        if (verified) {
+            Column(
+                modifier = Modifier.padding(innerPadding).fillMaxSize(),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Outlined.CheckCircle,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.size(48.dp)
+                )
+                Spacer(modifier = Modifier.height(12.dp))
+                Text("Verified", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "Taking you to your medicines",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            return@Scaffold
+        }
 
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // User-ID info chip (helpful for debugging)
-                AnimatedAuthContent(delayMillis = 100) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "Session ID: $userId",
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-                }
-
-                // OTP input field
-                AnimatedAuthContent(delayMillis = 200) {
-                    OutlinedTextField(
-                        value = otp,
-                        onValueChange = { if (it.length <= 6 && it.all { c -> c.isDigit() }) otp = it },
-                        label = { Text("Enter 6-digit OTP") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Lock,
-                                contentDescription = "OTP",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            focusedLabelColor = MaterialTheme.colorScheme.primary,
-                            cursorColor = MaterialTheme.colorScheme.primary
-                        ),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                }
-
-                // Timer / resend hint
-                AnimatedAuthContent(delayMillis = 250) {
-                    Text(
-                        text = if (isResendEnabled) "Didn't receive code? Tap Resend"
-                               else "Resend available in ${timeLeft}s",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.End
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Verify button
-                AnimatedAuthContent(delayMillis = 300) {
-                    AuthButton(
-                        text = "Verify OTP",
-                        isLoading = state.isLoading,
-                        enabled = otp.length == 6,
-                        onClick = {
-                            Log.d(OTP_TAG, "Verify tapped — userId=$userId, otp=$otp (length=${otp.length})")
-                            if (otp.length == 6) {
-                                Log.d(OTP_TAG, "Calling viewModel.verifyUserOtp()")
-                                viewModel.verifyUserOtp(userId = userId, otp = otp)
-                            } else {
-                                Toast.makeText(context, "Enter all 6 digits", Toast.LENGTH_SHORT).show()
-                            }
+        AuthFormColumn(modifier = Modifier.padding(innerPadding), verticalArrangement = Arrangement.Top) {
+            AuthHeader(
+                icon = Icons.Outlined.MarkEmailRead,
+                title = "Check your email",
+                subtitle = "Enter the $otpLength-digit code we sent to your registered email."
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            OtpBoxes(
+                value = otp,
+                length = otpLength,
+                isError = otpError != null,
+                enabled = !busy && !expired,
+                focusRequester = focusRequester,
+                onValueChange = { input ->
+                    val digits = input.filter(Char::isDigit).take(otpLength)
+                    if (digits != otp) {
+                        otp = digits
+                        otpError = null
+                        if (digits.length == otpLength) {
+                            haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                            verify()
                         }
-                    )
-                }
-
-                // Resend button
-                AnimatedAuthContent(delayMillis = 350) {
-                    OutlinedButton(
-                        onClick = {
-                            Log.d(OTP_TAG, "Resend OTP tapped for userId=$userId")
-                            Toast.makeText(context, "OTP resent!", Toast.LENGTH_SHORT).show()
-                            isResendEnabled = false
-                            timeLeft = 60
-                        },
-                        enabled = isResendEnabled,
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = MaterialTheme.colorScheme.primary,
-                            disabledContentColor = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                    ) {
-                        Text(
-                            text = "Resend OTP",
-                            fontWeight = FontWeight.SemiBold
-                        )
                     }
+                },
+                onDone = ::verify
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            SupportingText(otpError, if (expired) "Code expired" else "${otp.length}/$otpLength digits")
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text(
+                    text = if (expired) "Code expired" else "Expires in %d:%02d".format(secondsLeft / 60, secondsLeft % 60),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = if (expired) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                val pasteSource = remember { MutableInteractionSource() }
+                val pasteColor by pasteSource.shadeColor(Shades.BlueText, "paste")
+                TextButton(
+                    interactionSource = pasteSource,
+                    colors = ButtonDefaults.textButtonColors(contentColor = pasteColor),
+                    onClick = {
+                        pasteScope.launch {
+                            clipboard.getClipEntry()?.clipData?.takeIf { it.itemCount > 0 }
+                                ?.getItemAt(0)?.text?.toString()
+                                ?.filter(Char::isDigit)?.take(otpLength)
+                                ?.takeIf { it.isNotEmpty() }
+                                ?.let { pasted ->
+                                    otp = pasted
+                                    otpError = null
+                                    if (pasted.length == otpLength) verify()
+                                }
+                        }
+                    },
+                    enabled = !busy && !expired,
+                    modifier = Modifier.heightIn(min = 48.dp)
+                ) {
+                    Icon(Icons.Outlined.ContentPaste, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(modifier = Modifier.size(6.dp))
+                    Text("Paste", style = MaterialTheme.typography.labelLarge)
                 }
+            }
+            Spacer(modifier = Modifier.height(16.dp))
+            AuthPrimaryButton(text = "Verify", isLoading = busy, onClick = ::verify)
+            Spacer(modifier = Modifier.height(8.dp))
+            LinkButton(
+                text = "Didn't get a code? Send a new one",
+                onClick = { backToLogin("Sign in again to get a new code.") },
+                enabled = !busy,
+            )
+        }
+    }
+}
 
-                Spacer(modifier = Modifier.height(8.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Back to Sign In
-                AnimatedAuthContent(delayMillis = 400) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+@Composable
+internal fun OtpBoxes(
+    value: String,
+    length: Int,
+    isError: Boolean,
+    enabled: Boolean,
+    focusRequester: FocusRequester,
+    onValueChange: (String) -> Unit,
+    onDone: () -> Unit,
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        enabled = enabled,
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
+        keyboardActions = KeyboardActions(onDone = { onDone() }),
+        modifier = Modifier
+            .fillMaxWidth()
+            .focusRequester(focusRequester)
+            .semantics { contentDescription = "Verification code, $length digits" },
+        decorationBox = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally)
+            ) {
+                repeat(length) { i ->
+                    val char = value.getOrNull(i)
+                    val focused = enabled && i == value.length.coerceAtMost(length - 1)
+                    val borderColor by animateColorAsState(
+                        when {
+                            isError -> MaterialTheme.colorScheme.error
+                            focused -> Blue500
+                            else -> MaterialTheme.colorScheme.outline
+                        },
+                        tween(120), label = "otpBorder",
+                    )
+                    Surface(
+                        shape = MaterialTheme.shapes.medium,
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier
+                            .weight(1f)
+                            .widthIn(max = 56.dp)
+                            .aspectRatio(0.85f)
+                            .border(if (focused || isError) 2.dp else 1.dp, borderColor, MaterialTheme.shapes.medium)
                     ) {
-                        Text(
-                            text = "Wrong account?",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(onClick = {
-                            Log.d(OTP_TAG, "Go back tapped — navigating up")
-                            navController.navigate(Routes.SignInRoutes) {
-                                popUpTo(Routes.SignInRoutes) { inclusive = true }
-                            }
-                        }) {
+                        Box(contentAlignment = Alignment.Center) {
                             Text(
-                                text = "Sign In Again",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
+                                text = char?.toString() ?: "",
+                                style = MaterialTheme.typography.headlineSmall,
+                                color = MaterialTheme.colorScheme.onSurface,
+                                textAlign = TextAlign.Center,
+                                maxLines = 1
                             )
                         }
                     }
                 }
             }
         }
-    }
+    )
 }

@@ -1,211 +1,142 @@
 package com.saurabh.mediuserapp.ui.screens
 
-import android.util.Log
-import android.widget.Toast
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
+import android.os.SystemClock
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material.icons.outlined.MarkEmailRead
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Scaffold
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
-import com.saurabh.mediuserapp.ui.components.AnimatedAuthContent
-import com.saurabh.mediuserapp.ui.components.AuthButton
-import com.saurabh.mediuserapp.ui.components.AuthHeader
-import com.saurabh.mediuserapp.ui.components.LoadingOverlay
+import com.saurabh.mediuserapp.data.v1.error.AppError
+import com.saurabh.mediuserapp.data.v1.error.ErrorCode
+import com.saurabh.mediuserapp.ui.components.LinkButton
 import com.saurabh.mediuserapp.ui.nav.Routes
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 import kotlinx.coroutines.delay
 
-private const val TAG = "AuthScreen"
+private const val RESET_OTP_LENGTH = 6
+private const val RESEND_COOLDOWN_S = 60
 
-/**
- * Forgot Password — Step 2: Enter the OTP received via email.
- *
- * This screen does NOT call verifyUserOtp (that's for login).
- * Instead, on successful OTP entry, it navigates to the ResetPassword screen
- * where the user enters OTP + new password together for resetPasswordOtp().
- *
- * @param userId from PasswordResetResponse
- */
+/** Step 2: collect the reset code only (verified by the server on confirm). */
 @Composable
-fun ForgotPasswordOtpScreen(
-    userId: String,
-    viewModel: MyViewModel,
-    navController: NavHostController
-) {
-    val context = LocalContext.current
+fun ForgotPasswordOtpScreen(email: String, viewModel: MyViewModel, navController: NavHostController) {
+    val resendState by viewModel.passwordResetState.collectAsStateWithLifecycle()
+    val haptics = LocalHapticFeedback.current
+    val focusManager = LocalFocusManager.current
+    val focusRequester = remember { FocusRequester() }
 
-    var otp by remember { mutableStateOf("") }
-    var isResendEnabled by remember { mutableStateOf(false) }
-    var timeLeft by remember { mutableStateOf(60) }
+    var otp by rememberSaveable { mutableStateOf("") }
+    var otpError by rememberSaveable { mutableStateOf<String?>(null) }
+    var info by rememberSaveable { mutableStateOf<String?>(null) }
+    var resending by rememberSaveable { mutableStateOf(false) }
+    var resendAt by rememberSaveable { mutableLongStateOf(SystemClock.elapsedRealtime() + RESEND_COOLDOWN_S * 1000L) }
+    var cooldown by remember { mutableIntStateOf(RESEND_COOLDOWN_S) }
 
-    // Countdown timer
-    LaunchedEffect(Unit) {
-        while (timeLeft > 0) {
-            delay(1000L)
-            timeLeft--
+    val handle = navController.currentBackStackEntry?.savedStateHandle
+    LaunchedEffect(handle) {
+        handle?.get<String>(AUTH_MESSAGE_KEY)?.let {
+            otp = ""
+            otpError = it
+            handle.remove<String>(AUTH_MESSAGE_KEY)
         }
-        isResendEnabled = true
     }
 
-    // ----- UI -----
+    LaunchedEffect(Unit) { focusRequester.requestFocus() }
+
+    LaunchedEffect(resendAt) {
+        while (true) {
+            cooldown = ((resendAt - SystemClock.elapsedRealtime()) / 1000L).toInt().coerceAtLeast(0)
+            if (cooldown == 0) break
+            delay(1000L)
+        }
+    }
+
+    LaunchedEffect(resendState.success, resendState.error) {
+        if (!resending) return@LaunchedEffect
+        if (resendState.success != null) {
+            resending = false
+            otp = ""
+            otpError = null
+            info = "A new code was sent to $email"
+            resendAt = SystemClock.elapsedRealtime() + RESEND_COOLDOWN_S * 1000L
+            viewModel.resetPasswordResetState()
+        } else if (resendState.error != null) {
+            resending = false
+            otpError = if ((resendState.appError as? AppError.Api)?.code == ErrorCode.RATE_LIMITED)
+                "Too many requests. Please wait a moment and try again." else resendState.error
+            viewModel.resetPasswordResetState()
+        }
+    }
+
+    fun next() {
+        if (otp.length != RESET_OTP_LENGTH) {
+            otpError = "Enter all $RESET_OTP_LENGTH digits"
+            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+            return
+        }
+        focusManager.clearFocus()
+        navController.navigate(Routes.ResetPasswordRoutes(email, otp)) { launchSingleTop = true }
+    }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(rememberScrollState())
-        ) {
-            AnimatedAuthContent(delayMillis = 0) {
-                AuthHeader(
-                    title = "Enter OTP",
-                    subtitle = "We sent a verification code to your email"
-                )
-            }
-
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp, vertical = 32.dp),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                // User-ID chip
-                AnimatedAuthContent(delayMillis = 100) {
-                    Card(
-                        colors = CardDefaults.cardColors(
-                            containerColor = MaterialTheme.colorScheme.primaryContainer
-                        ),
-                        shape = RoundedCornerShape(12.dp)
-                    ) {
-                        Text(
-                            text = "User: $userId",
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
-                            fontWeight = FontWeight.Medium
-                        )
+        containerColor = MaterialTheme.colorScheme.background,
+        contentColor = MaterialTheme.colorScheme.onBackground,
+        topBar = { AuthTopBar("Enter code") { navController.navigateUp() } }
+    ) { inner ->
+        AuthFormColumn(modifier = Modifier.padding(inner), verticalArrangement = Arrangement.Top) {
+            AuthHeader(
+                icon = Icons.Outlined.MarkEmailRead,
+                title = "Check your email",
+                subtitle = info ?: "Enter the $RESET_OTP_LENGTH-digit reset code sent to $email."
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            OtpBoxes(
+                value = otp,
+                length = RESET_OTP_LENGTH,
+                isError = otpError != null,
+                enabled = !resendState.isLoading,
+                focusRequester = focusRequester,
+                onValueChange = { input ->
+                    val digits = input.filter(Char::isDigit).take(RESET_OTP_LENGTH)
+                    if (digits != otp) {
+                        otp = digits
+                        otpError = null
                     }
-                }
-
-                // OTP field
-                AnimatedAuthContent(delayMillis = 200) {
-                    OutlinedTextField(
-                        value = otp,
-                        onValueChange = { if (it.length <= 6) otp = it },
-                        label = { Text("Enter 6-digit OTP") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Lock,
-                                contentDescription = "OTP",
-                                tint = MaterialTheme.colorScheme.primary
-                            )
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = MaterialTheme.colorScheme.primary,
-                            focusedLabelColor = MaterialTheme.colorScheme.primary,
-                            cursorColor = MaterialTheme.colorScheme.primary
-                        ),
-                        shape = RoundedCornerShape(14.dp)
-                    )
-                }
-
-                // Timer
-                AnimatedAuthContent(delayMillis = 250) {
-                    Text(
-                        text = if (isResendEnabled) "Didn't receive code?" else "Resend code in ${timeLeft}s",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.fillMaxWidth(),
-                        textAlign = TextAlign.End
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Next button → go to Reset Password screen with OTP
-                AnimatedAuthContent(delayMillis = 300) {
-                    AuthButton(
-                        text = "Continue",
-                        onClick = {
-                            if (otp.length == 6) {
-                                Log.d(TAG, "ForgotPasswordOtp — OTP entered: $otp, userId=$userId → navigating to ResetPassword")
-                                // We pass the OTP via savedStateHandle or as part of the route.
-                                // Here we navigate to ResetPassword and pass userId; OTP is re-entered there
-                                // OR we could store OTP temporarily. For simplicity we navigate and let user
-                                // enter OTP + new password in the next screen.
-                                navController.navigate(Routes.ResetPasswordRoutes(userId = userId))
-                            } else {
-                                Toast.makeText(context, "Please enter 6-digit OTP", Toast.LENGTH_SHORT).show()
-                            }
-                        }
-                    )
-                }
-
-                // Resend button
-                AnimatedAuthContent(delayMillis = 350) {
-                    TextButton(
-                        onClick = {
-                            if (isResendEnabled) {
-                                Log.d(TAG, "Resend password-reset OTP for userId=$userId")
-                                // Re-request OTP — the email is not available here, so just show toast
-                                Toast.makeText(context, "Please go back and re-enter your email to resend OTP", Toast.LENGTH_LONG).show()
-                                isResendEnabled = false
-                                timeLeft = 60
-                            }
-                        },
-                        enabled = isResendEnabled
-                    ) {
-                        Text(
-                            text = "Resend OTP",
-                            color = if (isResendEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                Spacer(modifier = Modifier.height(8.dp))
-
-                AnimatedAuthContent(delayMillis = 400) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "Wrong email?",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
-                        TextButton(onClick = { navController.navigateUp() }) {
-                            Text(
-                                text = "Go Back",
-                                color = MaterialTheme.colorScheme.primary,
-                                fontWeight = FontWeight.SemiBold
-                            )
-                        }
-                    }
-                }
-            }
+                },
+                onDone = ::next
+            )
+            Spacer(modifier = Modifier.height(4.dp))
+            SupportingText(otpError, "${otp.length}/$RESET_OTP_LENGTH digits")
+            Spacer(modifier = Modifier.height(16.dp))
+            AuthPrimaryButton(text = "Continue", isLoading = false, onClick = ::next)
+            Spacer(modifier = Modifier.height(8.dp))
+            LinkButton(
+                text = if (cooldown > 0) "Resend code in ${cooldown}s" else "Resend code",
+                onClick = {
+                    resending = true
+                    viewModel.requestPasswordReset(email)
+                },
+                enabled = cooldown == 0 && !resendState.isLoading,
+            )
         }
     }
 }

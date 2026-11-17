@@ -24,6 +24,7 @@ import com.saurabh.mediuserapp.data.v1.dto.LoginData
 import com.saurabh.mediuserapp.data.v1.dto.LoginRequest
 import com.saurabh.mediuserapp.data.v1.dto.LogoutRequest
 import com.saurabh.mediuserapp.data.v1.dto.OrderCancelRequest
+import com.saurabh.mediuserapp.data.v1.dto.OrderUpdateRequest
 import com.saurabh.mediuserapp.data.v1.dto.OrderCreateRequest
 import com.saurabh.mediuserapp.data.v1.dto.OrderDto
 import com.saurabh.mediuserapp.data.v1.dto.PasswordResetConfirmRequest
@@ -168,6 +169,11 @@ class Repository @Inject constructor(
 
     fun getOrder(orderId: String): Flow<ResultState<OrderDto>> = v1Flow {
         safeApiCall { ordersApi.getOrder(orderId) }
+    }
+
+    /** PATCH orders/{id}: own pending orders, patient_name / doctor_name only. */
+    fun updateOrder(orderId: String, patientName: String?, doctorName: String?): Flow<ResultState<OrderDto>> = v1Flow {
+        safeApiCall { ordersApi.updateOrder(orderId, OrderUpdateRequest(patientName, doctorName)) }
     }
 
     fun cancelOrder(orderId: String, reason: String? = null): Flow<ResultState<OrderDto>> = v1Flow {

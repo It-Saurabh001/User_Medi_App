@@ -11,6 +11,13 @@ data class UpdateProfileState(
     val appError: AppError? = null
 )
 
+data class EditOrderState(
+    val isLoading: Boolean = false,
+    val success: OrderDto? = null,
+    val error: String? = null,
+    val appError: AppError? = null
+)
+
 data class CancelOrderState(
     val isLoading: Boolean = false,
     val success: OrderDto? = null,

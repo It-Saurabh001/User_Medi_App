@@ -1,293 +1,178 @@
 package com.saurabh.mediuserapp.ui.screens
 
-import android.util.Log
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ExitToApp
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.automirrored.outlined.Logout
+import androidx.compose.material.icons.outlined.CalendarMonth
+import androidx.compose.material.icons.outlined.Edit
+import androidx.compose.material.icons.outlined.Email
+import androidx.compose.material.icons.outlined.Fingerprint
+import androidx.compose.material.icons.outlined.Home
+import androidx.compose.material.icons.outlined.Lock
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Phone
+import androidx.compose.material.icons.outlined.PinDrop
+import androidx.compose.material.icons.outlined.Settings
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
+import com.saurabh.mediuserapp.ui.adaptive.AdaptiveContent
+import com.saurabh.mediuserapp.ui.adaptive.AdaptiveWidths
+import com.saurabh.mediuserapp.ui.components.AppScreenScaffold
+import com.saurabh.mediuserapp.ui.components.ConfirmDialog
+import com.saurabh.mediuserapp.ui.components.DetailCard
+import com.saurabh.mediuserapp.ui.components.ErrorState
+import com.saurabh.mediuserapp.ui.components.InfoTile
+import com.saurabh.mediuserapp.ui.components.LoadingState
+import com.saurabh.mediuserapp.ui.components.PersonAvatar
+import com.saurabh.mediuserapp.ui.components.ShadeButton
+import com.saurabh.mediuserapp.ui.components.ShadeOutlinedButton
+import com.saurabh.mediuserapp.ui.components.TileIconButton
+import com.saurabh.mediuserapp.ui.components.Tone
+import com.saurabh.mediuserapp.ui.components.ToneChip
+import com.saurabh.mediuserapp.ui.components.dateTimeLabel
 import com.saurabh.mediuserapp.ui.nav.Routes
+import com.saurabh.mediuserapp.ui.theme.Red600
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 
-private const val PROFILE_TAG = "ProfileScreen"
-
-/**
- * Profile Screen — shows user info and handles logout.
- *
- * Logout flow:
- *   1. ViewModel.setUserLoggedOut() → clears tokens in TokenManager + sets isUserLoggedIn=false
- *   2. Navigate to SignInRoutes, pop everything off the back stack
- *   3. User cannot press back to return to the main app
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProfileScreen(navController: NavController, viewModel: MyViewModel) {
-    Log.d(PROFILE_TAG, "ProfileScreen CREATED")
+fun ProfileScreen(viewModel: MyViewModel, navController: NavController) {
+    val state by viewModel.specificUserState.collectAsStateWithLifecycle()
+    val user = state.success
+    val snackbar = remember { SnackbarHostState() }
+    var confirmLogout by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) { if (state.success == null && !state.isLoading) viewModel.getSpecificUser() }
 
-    val scrollState = rememberScrollState()
-    var showLogoutDialog by remember { mutableStateOf(false) }
-
-    // Observe login state — when it becomes false after logout, navigate to SignIn
-    val isLoggedIn by viewModel.isUserLoggedIn.collectAsState()
-    LaunchedEffect(isLoggedIn) {
-        if (!isLoggedIn) {
-            Log.d(PROFILE_TAG, "isLoggedIn=false detected → navigating to SignInRoutes")
-            navController.navigate(Routes.SignInRoutes) {
-                // Clear the ENTIRE back stack so user cannot go back to the app
-                popUpTo(0) { inclusive = true }
-                launchSingleTop = true
-            }
+    val handle = navController.currentBackStackEntry?.savedStateHandle
+    LaunchedEffect(handle) {
+        handle?.get<String>(AUTH_MESSAGE_KEY)?.let {
+            handle.remove<String>(AUTH_MESSAGE_KEY)
+            snackbar.showSnackbar(it)
         }
     }
+    val go: (Any) -> Unit = { route -> navController.navigate(route) { launchSingleTop = true } }
 
-    // Logout confirmation dialog
-    if (showLogoutDialog) {
-        AlertDialog(
-            onDismissRequest = { showLogoutDialog = false },
-            icon = {
-                Icon(
-                    Icons.AutoMirrored.Filled.ExitToApp,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error
-                )
-            },
-            title = {
-                Text(
-                    "Logout",
-                    fontWeight = FontWeight.Bold,
-                    style = MaterialTheme.typography.titleLarge
-                )
-            },
-            text = {
-                Text(
-                    "Are you sure you want to log out of your account?",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        showLogoutDialog = false
-                        Log.d(PROFILE_TAG, "Logout CONFIRMED — calling viewModel.setUserLoggedOut()")
-                        viewModel.logout()
-                        // Navigation handled by the LaunchedEffect above watching isLoggedIn
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
+    AppScreenScaffold(
+        title = "My profile",
+        snackbarHostState = snackbar,
+        actions = {
+            if (user != null) TileIconButton(Icons.Outlined.Edit, "Edit profile", { go(Routes.EditProfileRoutes) }, Modifier.padding(end = 8.dp))
+        },
+    ) { padding ->
+        Box(Modifier.padding(padding).fillMaxSize()) {
+            when {
+                user != null -> PullToRefreshBox(
+                    isRefreshing = state.isLoading,
+                    onRefresh = { viewModel.getSpecificUser() },
+                    modifier = Modifier.fillMaxSize(),
                 ) {
-                    Text("Logout", fontWeight = FontWeight.Bold)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showLogoutDialog = false }) {
-                    Text("Cancel")
-                }
-            }
-        )
-    }
-
-    Scaffold(
-        topBar = {
-            CenterAlignedTopAppBar(
-                title = {
-                    Text(
-                        "My Profile",
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.Center
-                    )
-                },
-                colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                actions = {
-                    // Logout icon in top-right
-                    IconButton(onClick = {
-                        Log.d(PROFILE_TAG, "Logout icon tapped → showing confirmation dialog")
-                        showLogoutDialog = true
-                    }) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.ExitToApp,
-                            contentDescription = "Logout",
-                            tint = MaterialTheme.colorScheme.error
-                        )
+                    AdaptiveContent(maxWidth = AdaptiveWidths.Form) {
+                        LazyColumn(
+                            modifier = Modifier.fillMaxSize(),
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp),
+                        ) {
+                            item(key = "identity") {
+                                Column(
+                                    Modifier.fillMaxWidth(),
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    PersonAvatar(url = user.imageUrl, name = user.name, size = 96.dp)
+                                    Text(
+                                        user.name, style = MaterialTheme.typography.titleLarge,
+                                        color = MaterialTheme.colorScheme.onBackground,
+                                        textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        if (user.isApproved) ToneChip("Approved", Tone.Success) else ToneChip("Awaiting approval", Tone.Warning)
+                                        if (user.isBlocked) ToneChip("Blocked", Tone.Danger)
+                                    }
+                                }
+                            }
+                            item(key = "details") {
+                                DetailCard(title = "Account details", icon = Icons.Outlined.Person) {
+                                    InfoTile("Email", user.email.ifBlank { "Not provided" }, icon = Icons.Outlined.Email)
+                                    InfoTile("Phone", user.phoneNumber.orEmpty().ifBlank { "Not provided" }, icon = Icons.Outlined.Phone)
+                                    InfoTile("Address", user.address.orEmpty().ifBlank { "Not provided" }, icon = Icons.Outlined.Home)
+                                    InfoTile("Pin code", user.pinCode.orEmpty().ifBlank { "Not provided" }, icon = Icons.Outlined.PinDrop)
+                                    InfoTile("Customer ID", user.userId, icon = Icons.Outlined.Fingerprint)
+                                    InfoTile("Member since", user.createdAt.dateTimeLabel(), icon = Icons.Outlined.CalendarMonth)
+                                }
+                            }
+                            item(key = "edit") {
+                                ShadeButton("Edit profile", { go(Routes.EditProfileRoutes) }, Modifier.fillMaxWidth(), icon = Icons.Outlined.Edit)
+                            }
+                            item(key = "credentials") {
+                                ShadeOutlinedButton(
+                                    "Change email or password", { go(Routes.ChangeCredentialsRoutes) },
+                                    Modifier.fillMaxWidth(), icon = Icons.Outlined.Lock
+                                )
+                            }
+                            item(key = "settings") {
+                                ShadeOutlinedButton(
+                                    "Settings & about", { go(Routes.SettingsRoutes) },
+                                    Modifier.fillMaxWidth(), icon = Icons.Outlined.Settings
+                                )
+                            }
+                            item(key = "logout") {
+                                ShadeOutlinedButton(
+                                    text = "Log out", onClick = { confirmLogout = true },
+                                    icon = Icons.AutoMirrored.Outlined.Logout, contentColor = Red600,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
                     }
                 }
-            )
-        },
-        containerColor = MaterialTheme.colorScheme.background
-    ) { innerPadding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-                .verticalScroll(scrollState)
-        ) {
-            HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.outlineVariant)
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // ── Avatar section ──────────────────────────────────────────────
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(100.dp)
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primaryContainer)
-                        .border(3.dp, MaterialTheme.colorScheme.primary, CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "S",
-                        fontSize = 40.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                    )
-                }
-                Spacer(modifier = Modifier.height(12.dp))
-                Text(
-                    text = "citizen23",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground
+                state.error != null && !state.isLoading -> ErrorState(
+                    message = state.error.orEmpty(),
+                    onRetry = { viewModel.getSpecificUser() },
                 )
-                Text(
-                    text = "User",
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+                else -> LoadingState()
             }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // ── Info card ───────────────────────────────────────────────────
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surface
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
-            ) {
-                Column(modifier = Modifier.padding(20.dp)) {
-                    ProfileInfoRow(
-                        icon = Icons.Default.Email,
-                        label = "Email",
-                        value = "citizen23@gmail.com"
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 10.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
-                    ProfileInfoRow(
-                        icon = Icons.Default.Phone,
-                        label = "Phone",
-                        value = "+91 7895862545"
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 10.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
-                    ProfileInfoRow(
-                        icon = Icons.Default.LocationOn,
-                        label = "Address",
-                        value = "Jankipuram, Lucknow, Uttar Pradesh"
-                    )
-                    HorizontalDivider(
-                        modifier = Modifier.padding(vertical = 10.dp),
-                        color = MaterialTheme.colorScheme.outlineVariant
-                    )
-                    ProfileInfoRow(
-                        icon = Icons.Default.Badge,
-                        label = "Aadhar",
-                        value = "5245 5623 8545 6356"
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
-
-            // ── Logout button ────────────────────────────────────────────────
-            Button(
-                onClick = {
-                    Log.d(PROFILE_TAG, "Logout button CLICKED → showing confirmation dialog")
-                    showLogoutDialog = true
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 24.dp)
-                    .height(52.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                ),
-                shape = RoundedCornerShape(14.dp)
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Filled.ExitToApp,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Logout",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold
-                )
-            }
-
-            Spacer(modifier = Modifier.height(32.dp))
         }
     }
-}
 
-/** A single row of profile info with an icon, label and value. */
-@Composable
-private fun ProfileInfoRow(icon: ImageVector, label: String, value: String) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(22.dp)
+    if (confirmLogout) {
+        ConfirmDialog(
+            title = "Log out?",
+            message = "You will need to sign in again to place or track orders.",
+            confirmText = "Log out",
+            onConfirm = {
+                confirmLogout = false
+                viewModel.logout()
+                navController.navigate(Routes.SignInRoutes) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            },
+            onDismiss = { confirmLogout = false },
         )
-        Spacer(modifier = Modifier.width(12.dp))
-        Column {
-            Text(
-                text = label,
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            Text(
-                text = value,
-                style = MaterialTheme.typography.bodyMedium,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-        }
     }
 }

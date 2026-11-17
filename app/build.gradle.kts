@@ -18,10 +18,9 @@ if (secretPropertiesFile.exists()) {
     }
 }
 
-val wirelessDeviceUrl = secretProperties.getProperty(
-    "WirelessPhysicalDevice",
-    "http://10.0.2.2:5000/"
-)
+// BASE_URL picks the backend; falls back to WirelessPhysicalDevice (local server).
+val wirelessDeviceUrl = (secretProperties.getProperty("BASE_URL")
+    ?: secretProperties.getProperty("WirelessPhysicalDevice", "http://10.0.2.2:5000/")).trim()
 
 android {
     namespace = "com.saurabh.mediuserapp"
@@ -88,6 +87,7 @@ dependencies {
     implementation(libs.androidx.compose.animation.core.lint)
     testImplementation(libs.junit)
     testImplementation(libs.mockwebserver)
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
     androidTestImplementation(platform(libs.androidx.compose.bom))
@@ -100,7 +100,7 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
-
+    implementation("androidx.core:core-splashscreen:1.2.0")
 
     implementation("com.squareup.okhttp3:logging-interceptor:5.4.0")
 
@@ -112,6 +112,10 @@ dependencies {
 
     implementation(libs.androidx.security.crypto)
     implementation(libs.ucrop)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.mlkit.barcode.scanning)
     implementation(libs.dotenv.kotlin)
 
 }

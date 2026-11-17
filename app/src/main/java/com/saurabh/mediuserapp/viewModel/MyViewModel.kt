@@ -15,6 +15,7 @@ import com.saurabh.mediuserapp.data.v1.core.hasMore
 import com.saurabh.mediuserapp.data.v1.dto.AppConfig
 import com.saurabh.mediuserapp.data.v1.dto.InvoiceDto
 import com.saurabh.mediuserapp.data.v1.dto.OrderCreateRequest
+import com.saurabh.mediuserapp.data.v1.dto.ProductCategoryDto
 import com.saurabh.mediuserapp.data.v1.dto.ProfileUpdateRequest
 import com.saurabh.mediuserapp.data.v1.dto.UserCreateRequest
 import com.saurabh.mediuserapp.data.v1.error.AppError
@@ -31,12 +32,13 @@ import com.saurabh.mediuserapp.utils.User
 import com.saurabh.mediuserapp.utils.UserState
 import com.saurabh.mediuserapp.utils.logAsOTP
 import com.saurabh.mediuserapp.utils.screensState.AllProductState
+import com.saurabh.mediuserapp.utils.screensState.BarcodeLookupState
 import com.saurabh.mediuserapp.utils.screensState.CancelOrderState
 import com.saurabh.mediuserapp.utils.screensState.CreateOrderState
 import com.saurabh.mediuserapp.utils.screensState.CreateUserState
+import com.saurabh.mediuserapp.utils.screensState.EditOrderState
 import com.saurabh.mediuserapp.utils.screensState.GetOrderByIdState
 import com.saurabh.mediuserapp.utils.screensState.GetSpecificProductState
-import com.saurabh.mediuserapp.utils.screensState.GetUserSellHistoryState
 import com.saurabh.mediuserapp.utils.screensState.GetUsersOrdersState
 import com.saurabh.mediuserapp.utils.screensState.PasswordResetOtpState
 import com.saurabh.mediuserapp.utils.screensState.PasswordResetState
@@ -71,6 +73,11 @@ class MyViewModel @Inject constructor(
 
     /** Non-null = show the blocking "update the app" screen (value = minimum version or "latest"). */
     val upgradeRequiredVersion: StateFlow<String?> = _upgradeRequiredVersion.asStateFlow()
+
+    private val _accountBlocked = MutableStateFlow(false)
+
+    /** True after a 403 ACCOUNT_BLOCKED from any call; NavApp shows AccountBlockedScreen. */
+    val accountBlocked: StateFlow<Boolean> = _accountBlocked.asStateFlow()
 
     private val _messages = MutableSharedFlow<String>(extraBufferCapacity = 8)
 
@@ -117,8 +124,16 @@ class MyViewModel @Inject constructor(
     private val _specificProductState = MutableStateFlow(GetSpecificProductState())
     val specificProductState = _specificProductState.asStateFlow()
 
-    private var productFilter = ProductFilter()
+    private val _productFilter = MutableStateFlow(ProductFilter())
+    val productFilter: StateFlow<ProductFilter> = _productFilter.asStateFlow()
+
+    /** Product list sort (`sort` per products allow-list, `order` asc/desc). */
+    private val _productSort = MutableStateFlow(PageRequest(sort = "name", order = "asc"))
+    val productSort: StateFlow<PageRequest> = _productSort.asStateFlow()
     private var productRequest = PageRequest()
+
+    private val _categoriesState = MutableStateFlow<UiState<List<ProductCategoryDto>>>(UiState.Loading)
+    val categoriesState = _categoriesState.asStateFlow()
 
     // ===========================
     // 3. ORDER STATES
@@ -132,8 +147,15 @@ class MyViewModel @Inject constructor(
     private val _orderDetailState = MutableStateFlow(GetOrderByIdState())
     val orderDetailState = _orderDetailState.asStateFlow()
 
-    private val _sellHistoryState = MutableStateFlow(GetUserSellHistoryState())
-    val sellHistoryState = _sellHistoryState.asStateFlow()
+    private val _historyState = MutableStateFlow(GetUsersOrdersState())
+    val historyState = _historyState.asStateFlow()
+
+    private val _historyFilter = MutableStateFlow(OrderFilter(status = OrderStatus.SOLD))
+    val historyFilter: StateFlow<OrderFilter> = _historyFilter.asStateFlow()
+    private var historyRequest = PageRequest()
+
+    private val _editOrderState = MutableStateFlow(EditOrderState())
+    val editOrderState = _editOrderState.asStateFlow()
 
     private val _cancelOrderState = MutableStateFlow(CancelOrderState())
     val cancelOrderState = _cancelOrderState.asStateFlow()
@@ -144,7 +166,8 @@ class MyViewModel @Inject constructor(
     private val _invoiceState = MutableStateFlow<UiState<InvoiceDto>>(UiState.Loading)
     val invoiceState = _invoiceState.asStateFlow()
 
-    private var orderFilter = OrderFilter()
+    private val _orderFilter = MutableStateFlow(OrderFilter())
+    val orderFilter: StateFlow<OrderFilter> = _orderFilter.asStateFlow()
     private var orderRequest = PageRequest()
 
     // ===========================
@@ -186,10 +209,7 @@ class MyViewModel @Inject constructor(
                         repository.clearSession()
                         _isUserLoggedIn.value = false
                     }
-                    is AppEvent.AccountBlocked -> {
-                        _messages.tryEmit("Your account has been blocked. Please contact the pharmacy.")
-                        logout()
-                    }
+                    is AppEvent.AccountBlocked -> _accountBlocked.value = true
                     is AppEvent.RateLimited ->
                         _messages.tryEmit("Too many attempts. Please wait a moment and try again.")
                     is AppEvent.UpgradeRequired ->
@@ -212,8 +232,9 @@ class MyViewModel @Inject constructor(
         _createOrderState.value = CreateOrderState()
         _userOrdersState.value = GetUsersOrdersState()
         _orderDetailState.value = GetOrderByIdState()
-        _sellHistoryState.value = GetUserSellHistoryState()
+        _historyState.value = GetUsersOrdersState()
         _cancelOrderState.value = CancelOrderState()
+        _editOrderState.value = EditOrderState()
         _uploadPrescriptionState.value = UploadPrescriptionState()
     }
 
@@ -325,7 +346,10 @@ class MyViewModel @Inject constructor(
         }
     }
 
+    fun resetUpdateProfileState() { _updateProfileState.value = UpdateProfileState() }
+
     fun updateMe(request: ProfileUpdateRequest, image: ImagePart? = null) {
+        if (_updateProfileState.value.isLoading) return
         viewModelScope.launch(Dispatchers.IO) {
             repository.updateMe(request, image).collectInto(
                 onLoading = { _updateProfileState.value = UpdateProfileState(isLoading = true) },
@@ -342,11 +366,13 @@ class MyViewModel @Inject constructor(
     // PRODUCT FUNCTIONS
     // ===========================
 
-    fun getAllProduct(filter: ProductFilter = ProductFilter()) {
-        productFilter = filter
-        productRequest = PageRequest()
+    fun getAllProduct(filter: ProductFilter = _productFilter.value, force: Boolean = false) {
+        val current = _getAllProduct.value
+        if (!force && filter == _productFilter.value && (current.isLoading || current.success != null)) return
+        _productFilter.value = filter
+        productRequest = _productSort.value.copy(offset = 0)
         viewModelScope.launch(Dispatchers.IO) {
-            repository.getProducts(productFilter, productRequest).collectInto(
+            repository.getProducts(filter, productRequest).collectInto(
                 onLoading = { _getAllProduct.value = AllProductState(isLoading = true) },
                 onError = { msg, err -> _getAllProduct.value = AllProductState(error = msg, appError = err) },
                 onSuccess = {
@@ -367,7 +393,7 @@ class MyViewModel @Inject constructor(
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
-            repository.getProducts(productFilter, next).collectInto(
+            repository.getProducts(_productFilter.value, next).collectInto(
                 onLoading = { _getAllProduct.value = current.copy(isLoadingMore = true) },
                 onError = { msg, err ->
                     _getAllProduct.value = current.copy(isLoadingMore = false, error = msg, appError = err)
@@ -382,6 +408,58 @@ class MyViewModel @Inject constructor(
                 }
             )
         }
+    }
+
+    /** Applies a new filter and/or sort and reloads page 1. */
+    fun setProductFilter(
+        filter: ProductFilter = _productFilter.value,
+        sort: String = _productSort.value.sort ?: "name",
+        order: String = _productSort.value.order ?: "asc",
+    ) {
+        _productSort.value = PageRequest(sort = sort, order = order)
+        getAllProduct(filter, force = true)
+    }
+
+    fun loadProductCategories(force: Boolean = false) {
+        if (!force && _categoriesState.value is UiState.Success) return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.getProductCategories(PageRequest(limit = 100, sort = "name", order = "asc")).collectInto(
+                onLoading = { if (_categoriesState.value !is UiState.Success) _categoriesState.value = UiState.Loading },
+                onError = { _, err -> if (_categoriesState.value !is UiState.Success) _categoriesState.value = UiState.Error(err ?: AppError.Unknown(null)) },
+                onSuccess = { _categoriesState.value = UiState.Success(it.items) }
+            )
+        }
+    }
+
+    private val _barcodeLookup = MutableStateFlow<BarcodeLookupState>(BarcodeLookupState.Idle)
+    val barcodeLookup: StateFlow<BarcodeLookupState> = _barcodeLookup.asStateFlow()
+    private var barcodeJob: kotlinx.coroutines.Job? = null
+
+    fun lookupBarcode(barcode: String) {
+        val code = barcode.trim()
+        if (code.isEmpty() || _barcodeLookup.value is BarcodeLookupState.Loading) return
+        barcodeJob?.cancel()
+        barcodeJob = viewModelScope.launch(Dispatchers.IO) {
+            repository.getProductByBarcode(code).collectInto(
+                onLoading = { _barcodeLookup.value = BarcodeLookupState.Loading(code) },
+                onError = { m, e ->
+                    _barcodeLookup.value = if ((e as? AppError.Api)?.httpStatus == 404) BarcodeLookupState.NotFound(code)
+                    else BarcodeLookupState.Failed(code, m ?: "Lookup failed", e)
+                },
+                onSuccess = { p -> _barcodeLookup.value = BarcodeLookupState.Found(code, p) }
+            )
+        }
+    }
+
+    fun clearBarcodeLookup() {
+        barcodeJob?.cancel()
+        _barcodeLookup.value = BarcodeLookupState.Idle
+    }
+
+    /** AccountBlocked screen "Log out": clears the session and the blocked flag. */
+    fun acknowledgeAccountBlocked() {
+        _accountBlocked.value = false
+        logout()
     }
 
     fun getSpecificProduct(productId: String) {
@@ -407,6 +485,7 @@ class MyViewModel @Inject constructor(
         patientName: String? = null,
         prescription: FilePart? = null
     ) {
+        if (_createOrderState.value.isLoading) return
         val key = _createOrderState.value.idempotencyKey ?: idempotencyKeyProvider.newKey()
         viewModelScope.launch(Dispatchers.IO) {
             val request = OrderCreateRequest(
@@ -430,11 +509,13 @@ class MyViewModel @Inject constructor(
         }
     }
 
-    fun getUserOrders(filter: OrderFilter = OrderFilter()) {
-        orderFilter = filter
+    fun getUserOrders(filter: OrderFilter = _orderFilter.value, force: Boolean = true) {
+        val current = _userOrdersState.value
+        if (!force && filter == _orderFilter.value && (current.isLoading || current.success != null)) return
+        _orderFilter.value = filter
         orderRequest = PageRequest()
         viewModelScope.launch(Dispatchers.IO) {
-            repository.getMyOrders(orderFilter, orderRequest).collectInto(
+            repository.getMyOrders(filter, orderRequest).collectInto(
                 onLoading = { _userOrdersState.value = GetUsersOrdersState(isLoading = true) },
                 onError = { msg, err -> _userOrdersState.value = GetUsersOrdersState(error = msg, appError = err) },
                 onSuccess = {
@@ -455,7 +536,7 @@ class MyViewModel @Inject constructor(
             return
         }
         viewModelScope.launch(Dispatchers.IO) {
-            repository.getMyOrders(orderFilter, next).collectInto(
+            repository.getMyOrders(_orderFilter.value, next).collectInto(
                 onLoading = { _userOrdersState.value = current.copy(isLoadingMore = true) },
                 onError = { msg, err ->
                     _userOrdersState.value = current.copy(isLoadingMore = false, error = msg, appError = err)
@@ -475,23 +556,86 @@ class MyViewModel @Inject constructor(
     fun getOrderById(orderId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.getOrder(orderId).collectInto(
-                onLoading = { _orderDetailState.value = GetOrderByIdState(isLoading = true) },
-                onError = { msg, _ -> _orderDetailState.value = GetOrderByIdState(error = msg) },
+                onLoading = {
+                    val keep = _orderDetailState.value.success?.takeIf { it.orderId == orderId }
+                    _orderDetailState.value = GetOrderByIdState(isLoading = true, success = keep)
+                },
+                onError = { msg, _ ->
+                    val keep = _orderDetailState.value.success?.takeIf { it.orderId == orderId }
+                    _orderDetailState.value = GetOrderByIdState(error = msg, success = keep)
+                },
                 onSuccess = { _orderDetailState.value = GetOrderByIdState(success = it) }
             )
         }
     }
 
-    /** v1 has no sell-history endpoint: sold orders of the logged-in customer. */
-    fun getSellHistoryByUserId() {
+    /** History tab: GET orders?status=sold|returned (+ from/to), paged. */
+    fun getHistoryOrders(filter: OrderFilter = _historyFilter.value, force: Boolean = true) {
+        val current = _historyState.value
+        if (!force && filter == _historyFilter.value && (current.isLoading || current.success != null)) return
+        _historyFilter.value = filter
+        historyRequest = PageRequest()
         viewModelScope.launch(Dispatchers.IO) {
-            repository.getMyOrders(OrderFilter(status = OrderStatus.SOLD), PageRequest()).collectInto(
-                onLoading = { _sellHistoryState.value = GetUserSellHistoryState(isLoading = true) },
-                onError = { msg, _ -> _sellHistoryState.value = GetUserSellHistoryState(error = msg) },
-                onSuccess = { _sellHistoryState.value = GetUserSellHistoryState(success = it) }
+            repository.getMyOrders(filter, historyRequest).collectInto(
+                onLoading = { _historyState.value = GetUsersOrdersState(isLoading = true) },
+                onError = { msg, err -> _historyState.value = GetUsersOrdersState(error = msg, appError = err) },
+                onSuccess = {
+                    _historyState.value = GetUsersOrdersState(
+                        success = it, pagination = it.pagination, endReached = it.pagination?.hasMore() != true
+                    )
+                }
             )
         }
     }
+
+    fun loadMoreHistory() {
+        val current = _historyState.value
+        if (current.isLoading || current.isLoadingMore || current.endReached) return
+        val next = historyRequest.next(current.pagination)
+        if (next == null) {
+            _historyState.value = current.copy(endReached = true)
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.getMyOrders(_historyFilter.value, next).collectInto(
+                onLoading = { _historyState.value = current.copy(isLoadingMore = true) },
+                onError = { msg, err ->
+                    _historyState.value = current.copy(isLoadingMore = false, error = msg, appError = err)
+                },
+                onSuccess = { page ->
+                    historyRequest = next
+                    _historyState.value = GetUsersOrdersState(
+                        success = PagedData(current.success?.items.orEmpty() + page.items, page.pagination),
+                        pagination = page.pagination,
+                        endReached = page.pagination?.hasMore() != true
+                    )
+                }
+            )
+        }
+    }
+
+
+    /** PATCH orders/{id} (pending only): patient / doctor name. */
+    fun updateOrderInfo(orderId: String, patientName: String?, doctorName: String?) {
+        if (_editOrderState.value.isLoading) return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.updateOrder(orderId, patientName, doctorName).collectInto(
+                onLoading = { _editOrderState.value = EditOrderState(isLoading = true) },
+                onError = { msg, err -> _editOrderState.value = EditOrderState(error = msg, appError = err) },
+                onSuccess = {
+                    _editOrderState.value = EditOrderState(success = it)
+                    _orderDetailState.value = GetOrderByIdState(success = it)
+                    getUserOrders(_orderFilter.value)
+                }
+            )
+        }
+    }
+
+    fun resetEditOrderState() { _editOrderState.value = EditOrderState() }
+
+    fun resetCancelOrderState() { _cancelOrderState.value = CancelOrderState() }
+
+    fun resetUploadPrescriptionState() { _uploadPrescriptionState.value = UploadPrescriptionState() }
 
     fun cancelOrder(orderId: String, reason: String? = null) {
         viewModelScope.launch(Dispatchers.IO) {
@@ -501,7 +645,7 @@ class MyViewModel @Inject constructor(
                 onSuccess = {
                     _cancelOrderState.value = CancelOrderState(success = it)
                     _orderDetailState.value = GetOrderByIdState(success = it)
-                    getUserOrders(orderFilter)
+                    getUserOrders(_orderFilter.value)
                 }
             )
         }
@@ -522,6 +666,7 @@ class MyViewModel @Inject constructor(
                 onSuccess = {
                     _uploadPrescriptionState.value = UploadPrescriptionState(success = it)
                     _orderDetailState.value = GetOrderByIdState(success = it)
+                    getUserOrders(_orderFilter.value)
                 }
             )
         }
@@ -613,6 +758,7 @@ class MyViewModel @Inject constructor(
     fun logout() {
         viewModelScope.launch(Dispatchers.IO) {
             repository.logout().collect { }
+            resetAllState()
             setUserLoggedOut()
             Log.d("MyViewModel", "User logged out successfully")
         }

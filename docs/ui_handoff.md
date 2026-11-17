@@ -199,3 +199,28 @@ Navigation audit (flow doc section 2 + back-stack rules):
 PENDING_EDGES: none.
 
 Theme additions: none.
+
+## Part 8 — Cart + multi-item checkout (backend POST /checkouts) | Status: DONE (build OK)
+
+Part status: DONE | Files changed (LOCKED): ui/screens/CartScreen.kt, ui/screens/CheckoutScreen.kt, ui/components/CheckoutParts.kt, utils/screensState/CartState.kt | Screens: new CartScreen, CheckoutScreen; InvoiceScreen gains checkout mode | MISSING screens: none | Skipped/notes: cart is in-memory (cleared on logout / process death).
+- Edited: data/v1/dto/OrderDtos.kt (`OrderDto.checkoutId`, `CheckoutItemRequest`, `CheckoutCreateRequest`, `CheckoutDto`), data/v1/dto/InvoiceDtos.kt (`checkoutId`, `orders`), data/v1/api/OrdersApi.kt (`createCheckout`, `getCheckoutInvoice`, `checkout_id` list query), repo/RepositorySupport.kt (`OrderFilter.checkoutId`), repo/Repository.kt (`createCheckout`, `getCheckoutInvoice`), viewModel/MyViewModel.kt, ui/nav/Routes.kt, ui/nav/NavApp.kt, ProductDetailScreen.kt, OrderPlacedScreen.kt, OrdersScreen.kt, HistoryScreen.kt, OrderDetailScreen.kt, InvoiceScreen.kt; response.md.
+
+Signatures:
+- `CartScreen(viewModel, navController)`: lines (image, name, unit price, Rx chip, `QuantityStepper` 1..max, remove tile, line total, per-item error in error colour), `SaveBar("Checkout · total")` -> Checkout; empty state with "Browse medicines".
+- `CheckoutScreen(viewModel, navController)`: per item summary; Rx items: doctor / patient name (optional) + prescription via `PrescriptionSourceSheet` + `SelectedFileRow`; note; summary card; `SaveBar("Place order · total")`. Files validated with `prepareUpload` before submit; success -> `OrderPlacedRoutes(firstOrderId, checkoutId)` popping Checkout.
+- `InvoiceScreen(orderId, viewModel, navController, checkoutId: String? = null)`: checkout mode loads `getCheckoutInvoice`, header "Checkout <id> · N orders".
+- `OrderPlacedScreen(orderId, viewModel, navController, checkoutId: String? = null)`: checkout mode "N orders placed", total, prescription upload failures; "View my orders" / "Continue shopping".
+- Components (CheckoutParts.kt): `List<OrderDto>.groupedByCheckout()`, `List<OrderDto>.statusSummary()`, `List<OrderDto>.hasBilled()`, `CheckoutGroupRow(orders, expanded, onToggle, modifier)`.
+- Orders / History: orders sharing a `checkoutId` render as one expandable group row ("Checkout · N items", products, date, status summary, total); children open OrderDetail. OrderDetail: "Checkout" card (N items + status summary; "View combined invoice" when a group order is sold/returned).
+- ProductDetail bottom bar: "Add to cart" (outlined, snackbar) + "Buy · price" (single-order flow unchanged); disabled "Out of stock" when not orderable.
+
+ViewModel changes:
+- `cart: StateFlow<List<CartItem>>`, `addToCart(product, quantity = 1)` (merge, cap at sellable stock / 100, Rx rule = backend rule), `updateCart(productId, transform)`, `removeFromCart(productId)`.
+- `checkoutState: StateFlow<CheckoutState>` (isLoading, success: CheckoutDto, error, appError, itemErrors: index -> message from `fields["items[i].field"]`, idempotencyKey, uploadFailures), `checkout(message, rxFiles: Map<productId, FilePart>)`: key reused while cart + message unchanged, new key otherwise; Rx items without doctor name send "Self prescribed" (or "Self" with a file); on success clears the cart, uploads each file via `uploadPrescription(orderId, ...)`, refreshes orders. `resetCheckoutState()`.
+- `checkoutGroups: StateFlow<Map<String, List<OrderDto>>>`, `loadCheckoutGroup(checkoutId)`; `getCheckoutInvoice(checkoutId)` (shares `invoiceState`). `resetAllState()` also clears cart / checkout state.
+
+Navigation changes: + `CartRoutes` (bottom-bar tab 2, badge = item count; bar now Home, Cart, Orders, History, Profile = 5), `CheckoutRoutes`, `CheckoutInvoiceRoutes(checkoutId)`; `OrderPlacedRoutes(orderId, checkoutId: String? = null)`. Edges: ProductDetail -> Cart (add) ; Cart -> Checkout -> OrderPlaced (Checkout popped) -> Orders / Products; Orders/History group -> OrderDetail -> CheckoutInvoice.
+
+PENDING_EDGES: none.
+
+Theme additions: none.

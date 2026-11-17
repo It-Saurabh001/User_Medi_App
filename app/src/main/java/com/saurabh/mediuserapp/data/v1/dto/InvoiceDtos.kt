@@ -15,7 +15,10 @@ data class InvoiceDto(
     @SerializedName("grand_total") val grandTotal: Double,
     @SerializedName("items") val items: List<InvoiceItemDto>,
     @SerializedName("order") val order: OrderDto,
-    @SerializedName("user") val user: InvoiceUserDto
+    @SerializedName("user") val user: InvoiceUserDto,
+    /** Combined checkout invoice only (GET checkouts/{id}/invoice). */
+    @SerializedName("checkout_id") val checkoutId: String? = null,
+    @SerializedName("orders") val orders: List<OrderDto>? = null
 )
 
 data class InvoiceItemDto(

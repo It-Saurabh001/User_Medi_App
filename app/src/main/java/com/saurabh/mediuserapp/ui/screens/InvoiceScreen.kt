@@ -63,12 +63,15 @@ import java.util.Locale
 /** GET orders/{id}/invoice (sold / returned orders only). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun InvoiceScreen(orderId: String, viewModel: MyViewModel, navController: NavController) {
+fun InvoiceScreen(orderId: String, viewModel: MyViewModel, navController: NavController, checkoutId: String? = null) {
     val state by viewModel.invoiceState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    LaunchedEffect(orderId) { viewModel.getInvoice(orderId) }
+    val reload: () -> Unit = { if (checkoutId != null) viewModel.getCheckoutInvoice(checkoutId) else viewModel.getInvoice(orderId) }
+    LaunchedEffect(orderId, checkoutId) { reload() }
 
-    val invoice = (state as? UiState.Success)?.data?.takeIf { it.order.orderId == orderId }
+    val invoice = (state as? UiState.Success)?.data?.takeIf {
+        if (checkoutId != null) it.checkoutId == checkoutId else it.order.orderId == orderId && it.checkoutId == null
+    }
     val money = rememberInvoiceMoney(invoice?.currency)
     val share: () -> Unit = {
         invoice?.let { inv ->
@@ -96,7 +99,7 @@ fun InvoiceScreen(orderId: String, viewModel: MyViewModel, navController: NavCon
             when {
                 invoice != null -> PullToRefreshBox(
                     isRefreshing = s is UiState.Loading,
-                    onRefresh = { viewModel.getInvoice(orderId) },
+                    onRefresh = reload,
                     modifier = Modifier.fillMaxSize(),
                 ) {
                     AdaptiveContent(maxWidth = AdaptiveWidths.Form) { InvoiceBody(invoice, money) }
@@ -104,7 +107,7 @@ fun InvoiceScreen(orderId: String, viewModel: MyViewModel, navController: NavCon
                 s is UiState.Error -> ErrorState(
                     message = if ((s.error as? AppError.Api)?.code == ErrorCode.INVALID_TRANSITION)
                         "The invoice is available once the order is sold." else s.error.userMessage(),
-                    onRetry = { viewModel.getInvoice(orderId) },
+                    onRetry = reload,
                 )
                 else -> LoadingState()
             }
@@ -125,7 +128,8 @@ private fun InvoiceBody(inv: InvoiceDto, money: NumberFormat) {
                     Column(Modifier.weight(1f)) {
                         Text(inv.invoiceNumber, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         Text(
-                            "Order ${inv.order.orderId}", style = MaterialTheme.typography.labelMedium,
+                            inv.checkoutId?.let { "Checkout $it · ${inv.orders?.size ?: 1} orders" } ?: "Order ${inv.order.orderId}",
+                            style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         )
                     }

@@ -56,6 +56,14 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import com.saurabh.mediuserapp.data.v1.dto.CheckoutCreateRequest
+import com.saurabh.mediuserapp.data.v1.dto.CheckoutItemRequest
+import com.saurabh.mediuserapp.data.v1.dto.OrderDto
+import com.saurabh.mediuserapp.data.v1.dto.ProductDto
+import com.saurabh.mediuserapp.utils.screensState.CartItem
+import com.saurabh.mediuserapp.utils.screensState.CheckoutState
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 
 @HiltViewModel
 class MyViewModel @Inject constructor(
@@ -220,6 +228,9 @@ class MyViewModel @Inject constructor(
     }
 
     private fun resetAllState() {
+        _cart.value = emptyList()
+        _checkoutState.value = CheckoutState()
+        _checkoutGroups.value = emptyMap()
         _createUserState.value = CreateUserState()
         _loginUserState.value = LoginUserState()
         _specificUserState.value = UserState()
@@ -675,6 +686,147 @@ class MyViewModel @Inject constructor(
     fun getInvoice(orderId: String) {
         viewModelScope.launch(Dispatchers.IO) {
             repository.getInvoice(orderId).collectInto(
+                onLoading = { _invoiceState.value = UiState.Loading },
+                onError = { _, err -> _invoiceState.value = UiState.Error(err ?: AppError.Unknown(null)) },
+                onSuccess = { _invoiceState.value = UiState.Success(it) }
+            )
+        }
+    }
+
+    // ===========================
+    // CART + MULTI-ITEM CHECKOUT
+    // ===========================
+
+    private val _cart = MutableStateFlow<List<CartItem>>(emptyList())
+    val cart: StateFlow<List<CartItem>> = _cart.asStateFlow()
+
+    private val _checkoutState = MutableStateFlow(CheckoutState())
+    val checkoutState: StateFlow<CheckoutState> = _checkoutState.asStateFlow()
+    private var checkoutSignature: String? = null
+
+    /** Adds [quantity] of [product] (merged with an existing line, capped at sellable stock / 100). */
+    fun addToCart(product: ProductDto, quantity: Int = 1) {
+        val max = product.sellableStock.coerceIn(0, 100)
+        if (max <= 0) return
+        _cart.update { items ->
+            val existing = items.firstOrNull { it.productId == product.productId }
+            if (existing != null) items.map {
+                if (it.productId == product.productId) it.copy(quantity = (it.quantity + quantity).coerceAtMost(max), maxQuantity = max) else it
+            } else items + CartItem(
+                productId = product.productId,
+                name = product.name,
+                price = product.price,
+                imageUrl = product.imageUrl,
+                dosageForm = product.dosageForm,
+                quantity = quantity.coerceIn(1, max),
+                maxQuantity = max,
+                needsPrescription = product.requiresPrescription ||
+                    product.scheduleType.trim().uppercase() in setOf("H", "H1", "X", "NARCOTIC"),
+            )
+        }
+        _checkoutState.update { it.copy(itemErrors = emptyMap()) }
+    }
+
+    fun updateCart(productId: String, transform: (CartItem) -> CartItem) {
+        _cart.update { items -> items.map { if (it.productId == productId) transform(it) else it } }
+    }
+
+    fun removeFromCart(productId: String) {
+        _cart.update { items -> items.filterNot { it.productId == productId } }
+        _checkoutState.update { it.copy(itemErrors = emptyMap()) }
+    }
+
+    fun resetCheckoutState() {
+        _checkoutState.value = CheckoutState(idempotencyKey = _checkoutState.value.idempotencyKey)
+    }
+
+    /**
+     * POST checkouts with the current cart. The Idempotency-Key is reused while the cart and message are
+     * unchanged (retry) and regenerated when they change. On success the cart is cleared and each picked
+     * prescription ([rxFiles] by productId) is uploaded to its order via POST orders/{id}/prescription.
+     */
+    fun checkout(message: String, rxFiles: Map<String, FilePart>) {
+        val items = _cart.value
+        if (items.isEmpty() || _checkoutState.value.isLoading) return
+        val signature = items.joinToString("|") { "${it.productId}:${it.quantity}:${it.doctorName}:${it.patientName}:${it.rxUri}" } + "#" + message
+        val key = _checkoutState.value.idempotencyKey?.takeIf { signature == checkoutSignature } ?: idempotencyKeyProvider.newKey()
+        checkoutSignature = signature
+        val request = CheckoutCreateRequest(
+            items = items.map { item ->
+                CheckoutItemRequest(
+                    productId = item.productId,
+                    quantity = item.quantity,
+                    doctorName = if (item.needsPrescription) {
+                        item.doctorName.trim().ifBlank { if (item.productId in rxFiles) "Self" else "Self prescribed" }
+                    } else null,
+                    patientName = item.patientName.trim().takeIf { item.needsPrescription && it.isNotEmpty() },
+                )
+            },
+            message = message.trim().ifBlank { null }
+        )
+        _checkoutState.value = CheckoutState(isLoading = true, idempotencyKey = key)
+        viewModelScope.launch(Dispatchers.IO) {
+            when (val result = repository.createCheckout(request, key).first { it !is ResultState.Loading }) {
+                is ResultState.Success -> {
+                    val failures = mutableListOf<String>()
+                    result.data.orders.forEachIndexed { i, order ->
+                        val item = items.getOrNull(i) ?: return@forEachIndexed
+                        val file = rxFiles[item.productId] ?: return@forEachIndexed
+                        val upload = repository.uploadPrescription(
+                            order.orderId, file,
+                            item.doctorName.trim().ifBlank { null }, item.patientName.trim().ifBlank { null }
+                        ).first { it !is ResultState.Loading }
+                        if (upload is ResultState.Error) failures += "${item.name}: ${upload.exception.message ?: "upload failed"}"
+                    }
+                    _cart.value = emptyList()
+                    checkoutSignature = null
+                    _checkoutState.value = CheckoutState(success = result.data, uploadFailures = failures)
+                    getUserOrders(_orderFilter.value)
+                }
+                is ResultState.Error -> {
+                    val appError = (result.exception as? AppException)?.error
+                    _checkoutState.value = CheckoutState(
+                        error = appError?.userMessage() ?: result.exception.message,
+                        appError = appError,
+                        itemErrors = checkoutItemErrors(appError),
+                        idempotencyKey = key,
+                    )
+                }
+                else -> Unit
+            }
+        }
+    }
+
+    /** `fields` keys "items[<i>].<field>" -> cart index -> message. */
+    private fun checkoutItemErrors(error: AppError?): Map<Int, String> {
+        val fields = (error as? AppError.Api)?.fields ?: return emptyMap()
+        val re = Regex("""^items\[(\d+)]\.?(\w*)$""")
+        return buildMap {
+            fields.forEach { (key, value) ->
+                val m = re.find(key) ?: return@forEach
+                val index = m.groupValues[1].toInt()
+                val field = m.groupValues[2].replace('_', ' ')
+                put(index, if (field.isBlank()) value else "${field.replaceFirstChar { it.uppercase() }}: $value")
+            }
+        }
+    }
+
+    /** Orders of each checkout (key = checkoutId), for OrderDetail and the combined invoice link. */
+    private val _checkoutGroups = MutableStateFlow(emptyMap<String, List<OrderDto>>())
+    val checkoutGroups: StateFlow<Map<String, List<OrderDto>>> = _checkoutGroups.asStateFlow()
+
+    fun loadCheckoutGroup(checkoutId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val result = repository.getMyOrders(OrderFilter(checkoutId = checkoutId), PageRequest(limit = 100))
+                .first { it !is ResultState.Loading }
+            if (result is ResultState.Success) _checkoutGroups.update { it + (checkoutId to result.data.items) }
+        }
+    }
+
+    /** Combined invoice (shares [invoiceState]; InvoiceScreen matches it by checkoutId). */
+    fun getCheckoutInvoice(checkoutId: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.getCheckoutInvoice(checkoutId).collectInto(
                 onLoading = { _invoiceState.value = UiState.Loading },
                 onError = { _, err -> _invoiceState.value = UiState.Error(err ?: AppError.Unknown(null)) },
                 onSuccess = { _invoiceState.value = UiState.Success(it) }

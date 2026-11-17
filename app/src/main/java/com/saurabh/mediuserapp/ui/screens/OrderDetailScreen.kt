@@ -25,6 +25,7 @@ import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Receipt
 import androidx.compose.material.icons.outlined.Replay
 import androidx.compose.material.icons.outlined.Sell
+import androidx.compose.material.icons.outlined.ShoppingCart
 import androidx.compose.material.icons.outlined.UploadFile
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
@@ -72,7 +73,9 @@ import com.saurabh.mediuserapp.ui.components.TileIconButton
 import com.saurabh.mediuserapp.ui.components.Tone
 import com.saurabh.mediuserapp.ui.components.ToneChip
 import com.saurabh.mediuserapp.ui.components.dateTimeLabel
+import com.saurabh.mediuserapp.ui.components.hasBilled
 import com.saurabh.mediuserapp.ui.components.inr
+import com.saurabh.mediuserapp.ui.components.statusSummary
 import com.saurabh.mediuserapp.ui.components.isSelfPrescribed
 import com.saurabh.mediuserapp.ui.nav.Routes
 import com.saurabh.mediuserapp.ui.theme.Blue100
@@ -94,6 +97,9 @@ fun OrderDetailScreen(orderId: String, viewModel: MyViewModel, navController: Na
     val snackbar = remember { SnackbarHostState() }
     var confirmCancel by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf(false) }
+
+    val checkoutGroups by viewModel.checkoutGroups.collectAsStateWithLifecycle()
+    LaunchedEffect(order?.checkoutId, order?.status) { order?.checkoutId?.let(viewModel::loadCheckoutGroup) }
 
     LaunchedEffect(orderId) {
         viewModel.resetCancelOrderState()
@@ -149,6 +155,10 @@ fun OrderDetailScreen(orderId: String, viewModel: MyViewModel, navController: Na
                     AdaptiveContent(maxWidth = AdaptiveWidths.Form) {
                         OrderBody(
                             order = order,
+                            checkoutOrders = order.checkoutId?.let { checkoutGroups[it] },
+                            onOpenCheckoutInvoice = {
+                                order.checkoutId?.let { navController.navigate(Routes.CheckoutInvoiceRoutes(it)) { launchSingleTop = true } }
+                            },
                             onOpenProduct = { navController.navigate(Routes.SpecificProductRoutes(order.productId)) { launchSingleTop = true } },
                             onOpenRx = { navController.navigate(Routes.PrescriptionViewerRoutes(order.orderId)) { launchSingleTop = true } }
                         )
@@ -186,7 +196,13 @@ fun OrderDetailScreen(orderId: String, viewModel: MyViewModel, navController: Na
 }
 
 @Composable
-private fun OrderBody(order: OrderDto, onOpenProduct: () -> Unit, onOpenRx: () -> Unit) {
+private fun OrderBody(
+    order: OrderDto,
+    onOpenProduct: () -> Unit,
+    onOpenRx: () -> Unit,
+    checkoutOrders: List<OrderDto>? = null,
+    onOpenCheckoutInvoice: () -> Unit = {},
+) {
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -209,6 +225,26 @@ private fun OrderBody(order: OrderDto, onOpenProduct: () -> Unit, onOpenRx: () -
                 if (order.status == OrderStatus.CANCELLED) {
                     InfoTile("Cancel reason", order.cancelReason.ifBlank { "No reason given" })
                 }
+            }
+        }
+
+        if (order.checkoutId != null) item(key = "checkout") {
+            DetailCard(title = "Checkout", icon = Icons.Outlined.ShoppingCart) {
+                val group = checkoutOrders.orEmpty()
+                NavRow(
+                    title = if (group.isEmpty()) "Part of a checkout" else "Part of checkout, ${group.size} items",
+                    subtitle = when {
+                        group.isEmpty() -> "Loading…"
+                        group.hasBilled() -> "${group.statusSummary()} · view combined invoice"
+                        else -> group.statusSummary()
+                    },
+                    onClick = { if (group.hasBilled()) onOpenCheckoutInvoice() },
+                    icon = Icons.AutoMirrored.Outlined.ReceiptLong
+                )
+                if (group.hasBilled()) ShadeOutlinedButton(
+                    "View combined invoice", onOpenCheckoutInvoice, Modifier.fillMaxWidth(),
+                    icon = Icons.AutoMirrored.Outlined.ReceiptLong
+                )
             }
         }
 

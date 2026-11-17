@@ -1,6 +1,7 @@
 package com.saurabh.mediuserapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
@@ -10,6 +11,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -17,7 +21,9 @@ import androidx.navigation.NavController
 import com.saurabh.mediuserapp.data.v1.core.OrderStatus
 import com.saurabh.mediuserapp.repo.OrderFilter
 import com.saurabh.mediuserapp.ui.components.AppScreenScaffold
+import com.saurabh.mediuserapp.ui.components.CheckoutGroupRow
 import com.saurabh.mediuserapp.ui.components.ChipLabel
+import com.saurabh.mediuserapp.ui.components.groupedByCheckout
 import com.saurabh.mediuserapp.ui.components.EmptyState
 import com.saurabh.mediuserapp.ui.components.ErrorState
 import com.saurabh.mediuserapp.ui.components.GsFilterChip
@@ -37,6 +43,7 @@ fun OrdersScreen(viewModel: MyViewModel, navController: NavController) {
     val filter by viewModel.orderFilter.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.getUserOrders(force = false) }
     val items = state.success?.items
+    var expanded by rememberSaveable { mutableStateOf(setOf<String>()) }
 
     AppScreenScaffold(title = "My orders", scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior()) { inner ->
         PagedLazyColumn(
@@ -69,10 +76,26 @@ fun OrdersScreen(viewModel: MyViewModel, navController: NavController) {
                         message = if (filter.status == null) "Orders you place appear here." else "Try another status."
                     )
                 }
-                else -> items(items, key = { it.orderId }, contentType = { "order" }) { o ->
-                    OrderCard(order = o, onClick = {
+                else -> {
+                    val open: (com.saurabh.mediuserapp.data.v1.dto.OrderDto) -> Unit = { o ->
                         navController.navigate(Routes.OrderDetailRoutes(o.orderId)) { launchSingleTop = true }
-                    })
+                    }
+                    items.groupedByCheckout().forEach { entry ->
+                        if (entry.size == 1) {
+                            val o = entry.first()
+                            item(key = o.orderId, contentType = "order") { OrderCard(order = o, onClick = { open(o) }) }
+                        } else {
+                            val cid = entry.first().checkoutId.orEmpty()
+                            item(key = "chk_$cid", contentType = "group") {
+                                CheckoutGroupRow(entry, expanded = cid in expanded, onToggle = {
+                                    expanded = if (cid in expanded) expanded - cid else expanded + cid
+                                })
+                            }
+                            if (cid in expanded) items(entry, key = { "${cid}_${it.orderId}" }, contentType = { "order" }) { o ->
+                                Box(Modifier.padding(start = 16.dp)) { OrderCard(order = o, onClick = { open(o) }) }
+                            }
+                        }
+                    }
                 }
             }
         }

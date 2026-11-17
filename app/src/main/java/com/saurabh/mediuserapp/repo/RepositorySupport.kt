@@ -67,10 +67,12 @@ data class ProductFilter(
 data class OrderFilter(
     val status: OrderStatus? = null,
     val dateRange: DateRange? = null,
-    val updatedSince: Instant? = null
+    val updatedSince: Instant? = null,
+    val checkoutId: String? = null
 ) {
     fun toQuery() = queryOf(
-        "status" to status, "from" to dateRange?.from, "to" to dateRange?.to, "updated_since" to updatedSince
+        "status" to status, "from" to dateRange?.from, "to" to dateRange?.to, "updated_since" to updatedSince,
+        "checkout_id" to checkoutId
     )
 }
 

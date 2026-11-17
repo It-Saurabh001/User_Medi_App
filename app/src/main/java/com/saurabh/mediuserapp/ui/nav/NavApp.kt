@@ -27,10 +27,14 @@ import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.ShoppingBag
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.outlined.History
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.ShoppingBag
+import androidx.compose.material.icons.outlined.ShoppingCart
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -67,6 +71,8 @@ import androidx.navigation.toRoute
 import com.saurabh.mediuserapp.ui.components.shadeColor
 import com.saurabh.mediuserapp.ui.screens.AccountBlockedScreen
 import com.saurabh.mediuserapp.ui.screens.BarcodeScannerScreen
+import com.saurabh.mediuserapp.ui.screens.CartScreen
+import com.saurabh.mediuserapp.ui.screens.CheckoutScreen
 import com.saurabh.mediuserapp.ui.screens.ChangeCredentialsScreen
 import com.saurabh.mediuserapp.ui.screens.EditProfileScreen
 import com.saurabh.mediuserapp.ui.screens.InvoiceScreen
@@ -108,6 +114,7 @@ private data class TopLevelTab(
 
 private val topLevelTabs = listOf(
     TopLevelTab("Home", Routes.ProductRoutes, Routes.ProductRoutes::class, Icons.Filled.Home, Icons.Outlined.Home),
+    TopLevelTab("Cart", Routes.CartRoutes, Routes.CartRoutes::class, Icons.Filled.ShoppingCart, Icons.Outlined.ShoppingCart),
     TopLevelTab("Orders", Routes.OrdersRoutes, Routes.OrdersRoutes::class, Icons.Filled.ShoppingBag, Icons.Outlined.ShoppingBag),
     TopLevelTab("History", Routes.HistoryRoutes, Routes.HistoryRoutes::class, Icons.Filled.History, Icons.Outlined.History),
     TopLevelTab("Profile", Routes.ProfileRoutes, Routes.ProfileRoutes::class, Icons.Filled.Person, Icons.Outlined.Person),
@@ -137,6 +144,7 @@ fun NavApp(viewModel: MyViewModel) {
     val selectedTab = destination.tabIndex()
     val isAuthRoute = destination == null || destination.isAny(authRouteClasses)
     val loggedIn by viewModel.isUserLoggedIn.collectAsStateWithLifecycle()
+    val cart by viewModel.cart.collectAsStateWithLifecycle()
     val upgradeRequired by viewModel.upgradeRequiredVersion.collectAsStateWithLifecycle()
     val accountBlocked by viewModel.accountBlocked.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
@@ -179,7 +187,7 @@ fun NavApp(viewModel: MyViewModel) {
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
             if (selectedTab >= 0) {
-                AppNavigationBar(selected = selectedTab) { index ->
+                AppNavigationBar(selected = selectedTab, cartCount = cart.sumOf { it.quantity }) { index ->
                     navController.navigate(topLevelTabs[index].route) {
                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                         launchSingleTop = true
@@ -242,7 +250,13 @@ fun NavApp(viewModel: MyViewModel) {
                 PlaceOrderScreen(entry.toRoute<Routes.PlaceOrderRoutes>().productId, viewModel, navController)
             }
             composable<Routes.OrderPlacedRoutes> { entry ->
-                OrderPlacedScreen(entry.toRoute<Routes.OrderPlacedRoutes>().orderId, viewModel, navController)
+                val r = entry.toRoute<Routes.OrderPlacedRoutes>()
+                OrderPlacedScreen(r.orderId, viewModel, navController, checkoutId = r.checkoutId)
+            }
+            composable<Routes.CartRoutes> { CartScreen(viewModel, navController) }
+            composable<Routes.CheckoutRoutes> { CheckoutScreen(viewModel, navController) }
+            composable<Routes.CheckoutInvoiceRoutes> { entry ->
+                InvoiceScreen("", viewModel, navController, checkoutId = entry.toRoute<Routes.CheckoutInvoiceRoutes>().checkoutId)
             }
             composable<Routes.OrdersRoutes> { OrdersScreen(viewModel, navController) }
             composable<Routes.OrderDetailRoutes> { entry ->
@@ -267,7 +281,7 @@ fun NavApp(viewModel: MyViewModel) {
 }
 
 @Composable
-private fun AppNavigationBar(selected: Int, onItemSelected: (Int) -> Unit) {
+private fun AppNavigationBar(selected: Int, cartCount: Int, onItemSelected: (Int) -> Unit) {
     Column {
         HorizontalDivider(color = MaterialTheme.colorScheme.outline)
         NavigationBar(
@@ -282,6 +296,7 @@ private fun AppNavigationBar(selected: Int, onItemSelected: (Int) -> Unit) {
                     selectedIcon = tab.selectedIcon,
                     unselectedIcon = tab.unselectedIcon,
                     label = tab.label,
+                    badge = if (tab.routeClass == Routes.CartRoutes::class) cartCount else 0,
                 )
             }
         }
@@ -295,6 +310,7 @@ private fun RowScope.NavBarItem(
     selectedIcon: ImageVector,
     unselectedIcon: ImageVector,
     label: String,
+    badge: Int = 0,
 ) {
     val source = remember { MutableInteractionSource() }
     val shade = if (selected) Shades.BlueChipSelected else Shade(Transparent, Blue50, Blue100)
@@ -313,8 +329,17 @@ private fun RowScope.NavBarItem(
             Modifier.size(width = 64.dp, height = 32.dp).clip(MaterialTheme.shapes.extraLarge).background(bg),
             contentAlignment = Alignment.Center,
         ) {
-            Crossfade(selected, animationSpec = tween(110), label = "navIcon") { sel ->
-                Icon(if (sel) selectedIcon else unselectedIcon, contentDescription = null, tint = fg)
+            BadgedBox(badge = {
+                if (badge > 0) Badge(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
+                    Text(if (badge > 99) "99+" else badge.toString(), maxLines = 1)
+                }
+            }) {
+                Crossfade(selected, animationSpec = tween(110), label = "navIcon") { sel ->
+                    Icon(
+                        if (sel) selectedIcon else unselectedIcon, tint = fg,
+                        contentDescription = if (badge > 0) "$label, $badge items" else null
+                    )
+                }
             }
         }
         Spacer(Modifier.height(4.dp))

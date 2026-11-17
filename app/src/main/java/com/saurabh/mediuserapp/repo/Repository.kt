@@ -17,6 +17,8 @@ import com.saurabh.mediuserapp.data.v1.core.safeApiCallPaged
 import com.saurabh.mediuserapp.data.v1.core.toApiError
 import com.saurabh.mediuserapp.data.v1.core.toAppError
 import com.saurabh.mediuserapp.data.v1.dto.AppConfig
+import com.saurabh.mediuserapp.data.v1.dto.CheckoutCreateRequest
+import com.saurabh.mediuserapp.data.v1.dto.CheckoutDto
 import com.saurabh.mediuserapp.data.v1.dto.DeviceDto
 import com.saurabh.mediuserapp.data.v1.dto.DeviceRegisterRequest
 import com.saurabh.mediuserapp.data.v1.dto.InvoiceDto
@@ -162,7 +164,7 @@ class Repository @Inject constructor(
         safeApiCallPaged {
             ordersApi.getOrders(
                 status = q["status"], from = q["from"], to = q["to"],
-                updatedSince = q["updated_since"], page = page.toQueryMap()
+                updatedSince = q["updated_since"], checkoutId = q["checkout_id"], page = page.toQueryMap()
             )
         }
     }
@@ -182,6 +184,16 @@ class Repository @Inject constructor(
 
     fun getInvoice(orderId: String): Flow<ResultState<InvoiceDto>> = v1Flow {
         safeApiCall { ordersApi.getInvoice(orderId) }
+    }
+
+    /** POST checkouts (JSON). Idempotency key is supplied by the caller. */
+    fun createCheckout(request: CheckoutCreateRequest, idempotencyKey: String): Flow<ResultState<CheckoutDto>> = v1Flow {
+        safeApiCall { ordersApi.createCheckout(request, idempotencyKey) }
+    }
+
+    /** GET checkouts/{checkout_id}/invoice (combined). */
+    fun getCheckoutInvoice(checkoutId: String): Flow<ResultState<InvoiceDto>> = v1Flow {
+        safeApiCall { ordersApi.getCheckoutInvoice(checkoutId) }
     }
 
     fun uploadPrescription(

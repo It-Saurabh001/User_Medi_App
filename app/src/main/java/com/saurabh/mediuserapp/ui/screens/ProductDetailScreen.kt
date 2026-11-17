@@ -10,14 +10,18 @@ import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.AddShoppingCart
 import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
@@ -25,6 +29,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -46,6 +51,8 @@ import com.saurabh.mediuserapp.ui.components.LoadingState
 import com.saurabh.mediuserapp.ui.components.ProductImage
 import com.saurabh.mediuserapp.ui.components.ProductStockChip
 import com.saurabh.mediuserapp.ui.components.SaveBar
+import com.saurabh.mediuserapp.ui.components.ShadeButton
+import com.saurabh.mediuserapp.ui.components.ShadeOutlinedButton
 import com.saurabh.mediuserapp.ui.nav.Routes
 import com.saurabh.mediuserapp.ui.components.Tone
 import com.saurabh.mediuserapp.ui.components.ToneChip
@@ -53,6 +60,7 @@ import com.saurabh.mediuserapp.ui.components.inr
 import com.saurabh.mediuserapp.ui.components.needsPrescription
 import com.saurabh.mediuserapp.utils.capitalizeEachWord
 import com.saurabh.mediuserapp.viewModel.MyViewModel
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -61,18 +69,37 @@ fun ProductDetailScreen(productId: String, viewModel: MyViewModel, navController
     LaunchedEffect(productId) { viewModel.getSpecificProduct(productId) }
     val product = state.success?.takeIf { it.productId == productId }
 
+    val snackbar = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
     AppScreenScaffold(
         title = "Medicine",
         onBack = { navController.popBackStack() },
+        snackbarHostState = snackbar,
         bottomBar = {
             if (product != null) {
                 val canOrder = product.inStock && product.sellableStock > 0
-                SaveBar(
-                    text = if (canOrder) "Buy · ${product.price.inr()}" else "Out of stock",
-                    loading = false,
-                    onClick = { navController.navigate(Routes.PlaceOrderRoutes(product.productId)) { launchSingleTop = true } },
-                    enabled = canOrder
-                )
+                if (!canOrder) SaveBar(text = "Out of stock", loading = false, onClick = {}, enabled = false)
+                else Surface(color = MaterialTheme.colorScheme.surface, tonalElevation = 2.dp) {
+                    Row(
+                        Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        ShadeOutlinedButton(
+                            text = "Add to cart",
+                            onClick = {
+                                viewModel.addToCart(product)
+                                scope.launch { snackbar.showSnackbar("Added to cart") }
+                            },
+                            modifier = Modifier.weight(1f),
+                            icon = Icons.Outlined.AddShoppingCart
+                        )
+                        ShadeButton(
+                            text = "Buy · ${product.price.inr()}",
+                            onClick = { navController.navigate(Routes.PlaceOrderRoutes(product.productId)) { launchSingleTop = true } },
+                            modifier = Modifier.weight(1f)
+                        )
+                    }
+                }
             }
         }
     ) { inner ->

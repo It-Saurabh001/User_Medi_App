@@ -1,16 +1,21 @@
 package com.saurabh.mediuserapp.ui.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
@@ -19,7 +24,9 @@ import androidx.navigation.NavController
 import com.saurabh.mediuserapp.data.v1.core.OrderStatus
 import com.saurabh.mediuserapp.repo.DateRange
 import com.saurabh.mediuserapp.ui.components.AppScreenScaffold
+import com.saurabh.mediuserapp.ui.components.CheckoutGroupRow
 import com.saurabh.mediuserapp.ui.components.ChipLabel
+import com.saurabh.mediuserapp.ui.components.groupedByCheckout
 import com.saurabh.mediuserapp.ui.components.DateField
 import com.saurabh.mediuserapp.ui.components.EmptyState
 import com.saurabh.mediuserapp.ui.components.ErrorState
@@ -42,6 +49,7 @@ fun HistoryScreen(viewModel: MyViewModel, navController: NavController) {
     val filter by viewModel.historyFilter.collectAsStateWithLifecycle()
     LaunchedEffect(Unit) { viewModel.getHistoryOrders(force = false) }
     val items = state.success?.items
+    var expanded by rememberSaveable { mutableStateOf(setOf<String>()) }
     val from = filter.dateRange?.from
     val to = filter.dateRange?.to
     val rangeError = if (from != null && to != null && from.isAfter(to)) "From date must be before To date" else null
@@ -104,11 +112,26 @@ fun HistoryScreen(viewModel: MyViewModel, navController: NavController) {
                         message = if (filter.dateRange != null) "Try a different date range." else "Completed orders appear here with their invoice."
                     )
                 }
-                else -> items(items.size, key = { items[it].orderId }, contentType = { "order" }) { i ->
-                    val o = items[i]
-                    OrderCard(order = o, onClick = {
+                else -> {
+                    val open: (com.saurabh.mediuserapp.data.v1.dto.OrderDto) -> Unit = { o ->
                         navController.navigate(Routes.OrderDetailRoutes(o.orderId)) { launchSingleTop = true }
-                    })
+                    }
+                    items.groupedByCheckout().forEach { entry ->
+                        if (entry.size == 1) {
+                            val o = entry.first()
+                            item(key = o.orderId, contentType = "order") { OrderCard(order = o, onClick = { open(o) }) }
+                        } else {
+                            val cid = entry.first().checkoutId.orEmpty()
+                            item(key = "chk_$cid", contentType = "group") {
+                                CheckoutGroupRow(entry, expanded = cid in expanded, onToggle = {
+                                    expanded = if (cid in expanded) expanded - cid else expanded + cid
+                                })
+                            }
+                            if (cid in expanded) items(entry, key = { "${cid}_${it.orderId}" }, contentType = { "order" }) { o ->
+                                Box(Modifier.padding(start = 16.dp)) { OrderCard(order = o, onClick = { open(o) }) }
+                            }
+                        }
+                    }
                 }
             }
         }

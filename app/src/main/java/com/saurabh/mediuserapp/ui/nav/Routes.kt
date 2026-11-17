@@ -59,7 +59,17 @@ sealed class Routes {
     data class PlaceOrderRoutes(val productId: String)
 
     @Serializable
-    data class OrderPlacedRoutes(val orderId: String)
+    data class OrderPlacedRoutes(val orderId: String, val checkoutId: String? = null)
+
+    // Cart / multi-item checkout
+    @Serializable
+    object CartRoutes
+
+    @Serializable
+    object CheckoutRoutes
+
+    @Serializable
+    data class CheckoutInvoiceRoutes(val checkoutId: String)
 
     // Orders
     @Serializable

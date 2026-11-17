@@ -29,7 +29,30 @@ data class OrderDto(
     /** Only on GET orders/{id}; element shape not documented. */
     @SerializedName("sales") val sales: List<JsonObject>?, // unverified
     /** Only on cancel; element shape not documented. */
-    @SerializedName("restocked") val restocked: List<JsonObject>? // unverified
+    @SerializedName("restocked") val restocked: List<JsonObject>?, // unverified
+    /** Set when placed via POST checkouts (multi-item); null otherwise. */
+    @SerializedName("checkout_id") val checkoutId: String? = null
+)
+
+/** POST checkouts item. Rx products need doctor_name (prescription file is uploaded afterwards). */
+data class CheckoutItemRequest(
+    @SerializedName("product_id") val productId: String,
+    @SerializedName("quantity") val quantity: Int,
+    @SerializedName("doctor_name") val doctorName: String? = null,
+    @SerializedName("patient_name") val patientName: String? = null,
+    @SerializedName("prescription_url") val prescriptionUrl: String? = null
+)
+
+/** POST checkouts (JSON). */
+data class CheckoutCreateRequest(
+    @SerializedName("items") val items: List<CheckoutItemRequest>,
+    @SerializedName("message") val message: String? = null
+)
+
+/** data of POST checkouts: one order per item, same order as the request items. */
+data class CheckoutDto(
+    @SerializedName("checkout_id") val checkoutId: String,
+    @SerializedName("orders") val orders: List<OrderDto>
 )
 
 /** POST orders. Sent as multipart (optional `prescription` part is passed separately). */

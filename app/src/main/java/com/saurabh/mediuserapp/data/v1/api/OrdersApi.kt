@@ -2,6 +2,8 @@ package com.saurabh.mediuserapp.data.v1.api
 
 import com.saurabh.mediuserapp.data.v1.core.ApiEnvelope
 import com.saurabh.mediuserapp.data.v1.core.PagedEnvelope
+import com.saurabh.mediuserapp.data.v1.dto.CheckoutCreateRequest
+import com.saurabh.mediuserapp.data.v1.dto.CheckoutDto
 import com.saurabh.mediuserapp.data.v1.dto.InvoiceDto
 import com.saurabh.mediuserapp.data.v1.dto.OrderCancelRequest
 import com.saurabh.mediuserapp.data.v1.dto.OrderDto
@@ -40,6 +42,7 @@ interface OrdersApi {
         @Query("from") from: String? = null,
         @Query("to") to: String? = null,
         @Query("updated_since") updatedSince: String? = null,
+        @Query("checkout_id") checkoutId: String? = null,
         @QueryMap page: Map<String, String> = emptyMap()
     ): Response<PagedEnvelope<OrderDto>>
 
@@ -60,6 +63,17 @@ interface OrdersApi {
 
     @GET("orders/{order_id}/invoice")
     suspend fun getInvoice(@Path("order_id") orderId: String): Response<ApiEnvelope<InvoiceDto>>
+
+    /** Several products in one call (JSON); one order per item grouped by checkout_id. */
+    @POST("checkouts")
+    suspend fun createCheckout(
+        @Body body: CheckoutCreateRequest,
+        @Header("Idempotency-Key") idempotencyKey: String? = null
+    ): Response<ApiEnvelope<CheckoutDto>>
+
+    /** Combined invoice of the sold/returned orders of a checkout. */
+    @GET("checkouts/{checkout_id}/invoice")
+    suspend fun getCheckoutInvoice(@Path("checkout_id") checkoutId: String): Response<ApiEnvelope<InvoiceDto>>
 
     /** [fields]: optional doctor_name / patient_name text parts. */
     @Multipart

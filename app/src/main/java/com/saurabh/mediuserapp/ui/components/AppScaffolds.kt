@@ -3,10 +3,8 @@ package com.saurabh.mediuserapp.ui.components
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -64,41 +62,20 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import com.saurabh.mediuserapp.ui.theme.isLight
 import androidx.compose.foundation.interaction.collectIsPressedAsState
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.saurabh.mediuserapp.ui.adaptive.AdaptiveContent
 import com.saurabh.mediuserapp.ui.adaptive.AdaptiveWidths
 import com.saurabh.mediuserapp.ui.device.hasCamera
 import com.saurabh.mediuserapp.ui.device.rememberIsOnline
-import com.saurabh.mediuserapp.ui.theme.Amber100
-import com.saurabh.mediuserapp.ui.theme.Amber600
-import com.saurabh.mediuserapp.ui.theme.Blue100
-import com.saurabh.mediuserapp.ui.theme.Blue400
-import com.saurabh.mediuserapp.ui.theme.Blue600
-import com.saurabh.mediuserapp.ui.theme.Blue800
-import com.saurabh.mediuserapp.ui.theme.Green100
-import com.saurabh.mediuserapp.ui.theme.Green600
-import com.saurabh.mediuserapp.ui.theme.GsUi
-import com.saurabh.mediuserapp.ui.theme.Ink
-import com.saurabh.mediuserapp.ui.theme.Red100
-import com.saurabh.mediuserapp.ui.theme.Red50
-import com.saurabh.mediuserapp.ui.theme.Red600
-import com.saurabh.mediuserapp.ui.theme.Sky100
-import com.saurabh.mediuserapp.ui.theme.Sky600
-import com.saurabh.mediuserapp.ui.theme.Transparent
-import com.saurabh.mediuserapp.ui.theme.White
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filter
 
@@ -113,7 +90,7 @@ fun AppScreenScaffold(
     modifier: Modifier = Modifier,
     onBack: (() -> Unit)? = null,
     navigationIcon: (@Composable () -> Unit)? = null,
-    actions: @Composable RowScope.() -> Unit = {},
+    actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
     scrollBehavior: TopAppBarScrollBehavior = TopAppBarDefaults.pinnedScrollBehavior(),
     floatingActionButton: @Composable () -> Unit = {},
     bottomBar: @Composable () -> Unit = {},
@@ -137,9 +114,9 @@ fun AppScreenScaffold(
                     },
                     actions = actions,
                     scrollBehavior = scrollBehavior,
-                    colors = GsUi.topBarColors()
+                    colors = com.saurabh.mediuserapp.ui.theme.GsUi.topBarColors()
                 )
-                HorizontalDivider(color = MaterialTheme.colorScheme.outline)
+                androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outline)
                 ConnectivityBanner()
             }
         },
@@ -302,7 +279,7 @@ fun StatCard(
     tone: Tone? = if (highlight) Tone.Success else null,
 ) {
     val light = MaterialTheme.isLight
-    val source = remember { MutableInteractionSource() }
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     // Card surface: alert tones use their 50 card shade (50 -> 100 -> 200); others are White rows (White -> Blue 50 -> 100).
     val cardShade = when (tone) {
         Tone.Warning -> com.saurabh.mediuserapp.ui.theme.GsUi.familyShade(com.saurabh.mediuserapp.ui.theme.Shades.AmberCard)
@@ -311,11 +288,11 @@ fun StatCard(
     }
     val (tileBg, tileFg, valueColor) = when {
         !light -> Triple(MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.colorScheme.onSecondaryContainer, MaterialTheme.colorScheme.onSurface)
-        tone == Tone.Warning -> Triple(Amber100, Amber600, Amber600)
-        tone == Tone.Danger -> Triple(Red100, Red600, Red600)
-        tone == Tone.Info -> Triple(Sky100, Sky600, Ink)
-        tone == Tone.Success -> Triple(Green100, Green600, Green600)
-        else -> Triple(Blue100, Blue600, Ink)
+        tone == Tone.Warning -> Triple(com.saurabh.mediuserapp.ui.theme.Amber100, com.saurabh.mediuserapp.ui.theme.Amber600, com.saurabh.mediuserapp.ui.theme.Amber600)
+        tone == Tone.Danger -> Triple(com.saurabh.mediuserapp.ui.theme.Red100, com.saurabh.mediuserapp.ui.theme.Red600, com.saurabh.mediuserapp.ui.theme.Red600)
+        tone == Tone.Info -> Triple(com.saurabh.mediuserapp.ui.theme.Sky100, com.saurabh.mediuserapp.ui.theme.Sky600, com.saurabh.mediuserapp.ui.theme.Ink)
+        tone == Tone.Success -> Triple(com.saurabh.mediuserapp.ui.theme.Green100, com.saurabh.mediuserapp.ui.theme.Green600, com.saurabh.mediuserapp.ui.theme.Green600)
+        else -> Triple(com.saurabh.mediuserapp.ui.theme.Blue100, com.saurabh.mediuserapp.ui.theme.Blue600, com.saurabh.mediuserapp.ui.theme.Ink)
     }
     val scale by source.pressScale(enabled = onClick != null)
     val container by source.shadeColor(cardShade, "statColor")
@@ -328,7 +305,7 @@ fun StatCard(
             Spacer(Modifier.height(4.dp))
             Text(
                 value, style = MaterialTheme.typography.headlineMedium, color = valueColor,
-                fontWeight = if (tone == Tone.Warning || tone == Tone.Danger) FontWeight.Bold else null,
+                fontWeight = if (tone == Tone.Warning || tone == Tone.Danger) androidx.compose.ui.text.font.FontWeight.Bold else null,
                 maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
@@ -336,7 +313,7 @@ fun StatCard(
         }
     }
     val colors = CardDefaults.cardColors(containerColor = container, contentColor = contentColor)
-    val border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    val border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     val m = modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale }
     if (onClick != null) Card(onClick = onClick, colors = colors, border = border, interactionSource = source, modifier = m, content = body)
     else Card(colors = colors, border = border, modifier = m, content = body)
@@ -355,7 +332,7 @@ fun HeroCard(
     icon: ImageVector? = null,
     onClick: (() -> Unit)? = null,
 ) {
-    val source = remember { MutableInteractionSource() }
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     val scale by source.pressScale(enabled = onClick != null)
     val level by source.pressLevel()
     val shape = MaterialTheme.shapes.large
@@ -364,17 +341,17 @@ fun HeroCard(
             .fillMaxWidth()
             .graphicsLayer { scaleX = scale; scaleY = scale; alpha = if (level == PressLevel.None) 1f else 0.92f }
             .clip(shape)
-            .background(Brush.linearGradient(listOf(Blue800, Blue600, Blue400)))
+            .background(androidx.compose.ui.graphics.Brush.linearGradient(listOf(com.saurabh.mediuserapp.ui.theme.Blue800, com.saurabh.mediuserapp.ui.theme.Blue600, com.saurabh.mediuserapp.ui.theme.Blue400)))
             .then(if (onClick != null) Modifier.clickable(interactionSource = source, indication = null, onClick = onClick) else Modifier)
             .padding(16.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(title, style = MaterialTheme.typography.labelLarge, color = White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(value, style = MaterialTheme.typography.headlineMedium, color = White, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = White, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                Text(title, style = MaterialTheme.typography.labelLarge, color = com.saurabh.mediuserapp.ui.theme.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Text(value, style = MaterialTheme.typography.headlineMedium, color = com.saurabh.mediuserapp.ui.theme.White, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                subtitle?.let { Text(it, style = MaterialTheme.typography.bodyMedium, color = com.saurabh.mediuserapp.ui.theme.White, maxLines = 2, overflow = TextOverflow.Ellipsis) }
             }
-            icon?.let { Icon(it, contentDescription = null, tint = White, modifier = Modifier.size(40.dp)) }
+            icon?.let { Icon(it, contentDescription = null, tint = com.saurabh.mediuserapp.ui.theme.White, modifier = Modifier.size(40.dp)) }
         }
     }
 }
@@ -396,7 +373,7 @@ fun ImageSourceSheet(
             title, style = MaterialTheme.typography.titleMedium,
             modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp).semantics { heading() }
         )
-        val rowColors = ListItemDefaults.colors(containerColor = Transparent)
+        val rowColors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent)
         if (camera) ListItem(
             headlineContent = { Text("Take photo") },
             leadingContent = { Icon(Icons.Outlined.CameraAlt, null) },
@@ -426,7 +403,7 @@ fun ImageSourceSheet(
 private fun Modifier.clickableRow(danger: Boolean = false, onClick: () -> Unit): Modifier {
     val source = remember { MutableInteractionSource() }
     val shade = if (danger) GsUi.familyShade(
-        com.saurabh.mediuserapp.ui.theme.Shade(White, Red50, Red100)
+        Shade(White, Red50, Red100)
     ) else GsUi.rowShade()
     val bg by source.shadeColor(shade, "sheetRow")
     return this.heightIn(min = 56.dp)

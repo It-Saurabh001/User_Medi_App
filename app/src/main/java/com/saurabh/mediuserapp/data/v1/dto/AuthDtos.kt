@@ -19,6 +19,12 @@ data class LoginData(
 )
 
 /** POST auth/verify-otp */
+/** POST auth/google (user: tokens directly, no OTP; response is [TokenData]). */
+data class GoogleLoginRequest(
+    @SerializedName("id_token") val idToken: String,
+    @SerializedName("account_type") val accountType: String = "user"
+)
+
 data class VerifyOtpRequest(
     @SerializedName("account_id") val accountId: String,
     @SerializedName("otp") val otp: String,

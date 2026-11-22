@@ -35,6 +35,8 @@ import com.saurabh.mediuserapp.ui.components.AppScreenScaffold
 import com.saurabh.mediuserapp.ui.components.DetailCard
 import com.saurabh.mediuserapp.ui.components.FormScaffold
 import com.saurabh.mediuserapp.ui.components.GsTextField
+import com.saurabh.mediuserapp.ui.components.LinkButton
+import com.saurabh.mediuserapp.ui.nav.Routes
 import com.saurabh.mediuserapp.ui.components.SaveBar
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 
@@ -45,6 +47,9 @@ fun ChangeCredentialsScreen(viewModel: MyViewModel, navController: NavController
     val state by viewModel.updateProfileState.collectAsStateWithLifecycle()
     val userState by viewModel.specificUserState.collectAsStateWithLifecycle()
     val currentEmail = userState.success?.email.orEmpty()
+    // Google-only accounts set a password via Forgot password; Google-linked emails are fixed (server rule).
+    val hasPassword = userState.success?.hasPassword != false
+    val googleLinked = userState.success?.googleLinked == true
     val focusManager = LocalFocusManager.current
 
     var email by rememberSaveable { mutableStateOf("") }
@@ -109,7 +114,30 @@ fun ChangeCredentialsScreen(viewModel: MyViewModel, navController: NavController
         Column(Modifier.padding(inner).fillMaxSize()) {
             Box(Modifier.weight(1f)) {
                 FormScaffold {
-                    DetailCard(title = "New email", icon = Icons.Outlined.Email) {
+                    if (!hasPassword) {
+                        DetailCard(title = "Password", icon = Icons.Outlined.Lock) {
+                            Text(
+                                "You sign in with Google, so this account has no password yet. " +
+                                    "Use Forgot password with $currentEmail to set one.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                            LinkButton(
+                                text = "Set a password",
+                                onClick = { navController.navigate(Routes.ForgotPasswordRoutes) { launchSingleTop = true } }
+                            )
+                        }
+                        return@FormScaffold
+                    }
+                    if (googleLinked) {
+                        DetailCard(title = "Email", icon = Icons.Outlined.Email) {
+                            Text(
+                                "$currentEmail is linked to Google and can't be changed.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                    } else DetailCard(title = "New email", icon = Icons.Outlined.Email) {
                         if (currentEmail.isNotBlank()) Text(
                             "Current: $currentEmail", style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
@@ -145,7 +173,7 @@ fun ChangeCredentialsScreen(viewModel: MyViewModel, navController: NavController
                     AuthFormError(formError)
                 }
             }
-            SaveBar("Update", state.isLoading, ::submit)
+            if (hasPassword) SaveBar("Update", state.isLoading, ::submit)
         }
     }
 }

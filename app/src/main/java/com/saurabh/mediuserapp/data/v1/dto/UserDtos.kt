@@ -19,7 +19,10 @@ data class UserDto(
     @SerializedName("is_approved") val isApproved: Boolean,
     @SerializedName("is_blocked") val isBlocked: Boolean,
     @SerializedName("is_deleted") val isDeleted: Boolean,
-    @SerializedName("created_at") val createdAt: Instant
+    @SerializedName("created_at") val createdAt: Instant,
+    /** null on older servers: treat as a password account. */
+    @SerializedName("has_password") val hasPassword: Boolean? = null,
+    @SerializedName("google_linked") val googleLinked: Boolean? = null
 )
 
 private val TEXT_TYPE = "text/plain; charset=utf-8".toMediaType()

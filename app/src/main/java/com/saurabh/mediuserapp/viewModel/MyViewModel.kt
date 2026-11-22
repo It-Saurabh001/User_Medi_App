@@ -111,6 +111,8 @@ class MyViewModel @Inject constructor(
     val updateProfileState = _updateProfileState.asStateFlow()
 
     private val _verifyOtpState = MutableStateFlow(VerifyOtpState())
+    private val _googleLoginState = MutableStateFlow(VerifyOtpState())
+    val googleLoginState = _googleLoginState.asStateFlow()
     val verifyOtpState = _verifyOtpState.asStateFlow()
 
     private val _passwordResetOtpState = MutableStateFlow(PasswordResetOtpState())
@@ -301,6 +303,31 @@ class MyViewModel @Inject constructor(
                 onSuccess = { _loginUserState.value = LoginUserState(success = it) }
             )
         }
+    }
+
+    /** Google sign-in: no OTP step; the Repository saves the session, role gate as in [verifyUserOtp]. */
+    fun loginUserWithGoogle(idToken: String) {
+        if (_googleLoginState.value.isLoading) return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.loginWithGoogle(idToken).collectInto(
+                onLoading = { _googleLoginState.value = VerifyOtpState(isLoading = true) },
+                onError = { msg, err -> _googleLoginState.value = VerifyOtpState(error = msg, appError = err) },
+                onSuccess = { data ->
+                    if (data.role != "user") {
+                        viewModelScope.launch { repository.logout().collect { } }
+                        _isUserLoggedIn.value = false
+                        _googleLoginState.value = VerifyOtpState(error = "Customer account required")
+                    } else {
+                        setUserLoggedIn()
+                        _googleLoginState.value = VerifyOtpState(success = data)
+                    }
+                }
+            )
+        }
+    }
+
+    fun resetGoogleLoginState() {
+        _googleLoginState.value = VerifyOtpState()
     }
 
     // Verify OTP (the Repository saves the session; role gate happens here)

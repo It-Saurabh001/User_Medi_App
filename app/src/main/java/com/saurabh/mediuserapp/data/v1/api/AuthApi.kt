@@ -1,6 +1,7 @@
 package com.saurabh.mediuserapp.data.v1.api
 
 import com.saurabh.mediuserapp.data.v1.core.ApiEnvelope
+import com.saurabh.mediuserapp.data.v1.dto.GoogleLoginRequest
 import com.saurabh.mediuserapp.data.v1.dto.LoginData
 import com.saurabh.mediuserapp.data.v1.dto.LoginRequest
 import com.saurabh.mediuserapp.data.v1.dto.LogoutData
@@ -21,6 +22,9 @@ import retrofit2.http.POST
 interface AuthApi {
     @POST("auth/login")
     suspend fun login(@Body body: LoginRequest): Response<ApiEnvelope<LoginData>>
+
+    @POST("auth/google")
+    suspend fun googleLogin(@Body body: GoogleLoginRequest): Response<ApiEnvelope<TokenData>>
 
     @POST("auth/verify-otp")
     suspend fun verifyOtp(@Body body: VerifyOtpRequest): Response<ApiEnvelope<TokenData>>

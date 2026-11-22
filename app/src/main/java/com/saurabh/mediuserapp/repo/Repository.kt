@@ -1,5 +1,6 @@
 package com.saurabh.mediuserapp.repo
 
+import android.content.Context
 import com.saurabh.mediuserapp.common.ResultState
 import com.saurabh.mediuserapp.data.v1.api.AuthApi
 import com.saurabh.mediuserapp.data.v1.api.DevicesApi
@@ -9,6 +10,9 @@ import com.saurabh.mediuserapp.data.v1.api.OrdersApi
 import com.saurabh.mediuserapp.data.v1.api.ProductsApi
 import com.saurabh.mediuserapp.data.v1.api.UsersApi
 import com.saurabh.mediuserapp.data.v1.core.ApiResult
+import com.saurabh.mediuserapp.data.v1.dto.GoogleLoginRequest
+import com.saurabh.mediuserapp.ui.screens.GoogleCredentials
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.saurabh.mediuserapp.data.v1.core.HealthResponse
 import com.saurabh.mediuserapp.data.v1.core.PageRequest
 import com.saurabh.mediuserapp.data.v1.core.map
@@ -57,7 +61,8 @@ class Repository @Inject constructor(
     private val devicesApi: DevicesApi,
     private val metaApi: MetaApi,
     private val healthApi: HealthApi,
-    private val tokenManager: TokenManager
+    private val tokenManager: TokenManager,
+    @ApplicationContext private val appContext: Context? = null
 ) {
     @Volatile
     private var appConfig: AppConfig? = null
@@ -71,6 +76,18 @@ class Repository @Inject constructor(
     /** Saves the session (both tokens, role, account id) on success; the role gate is the ViewModel's job. */
     fun verifyOtp(accountId: String, otp: String): Flow<ResultState<TokenData>> = v1Flow {
         safeApiCall { authApi.verifyOtp(VerifyOtpRequest(accountId, otp)) }.also { r ->
+            if (r is ApiResult.Success) {
+                val t = r.data
+                tokenManager.saveSession(
+                    TokenBundle(t.accessToken, t.refreshToken, t.role, t.accountId, t.accountType, t.expiresIn)
+                )
+            }
+        }
+    }
+
+    /** POST auth/google: tokens come back directly (no OTP); the session is saved like [verifyOtp]. */
+    fun loginWithGoogle(idToken: String): Flow<ResultState<TokenData>> = v1Flow {
+        safeApiCall { authApi.googleLogin(GoogleLoginRequest(idToken)) }.also { r ->
             if (r is ApiResult.Success) {
                 val t = r.data
                 tokenManager.saveSession(
@@ -95,6 +112,7 @@ class Repository @Inject constructor(
             safeApiCall { authApi.logout(LogoutRequest(tokenManager.getRefreshToken())) }
         } finally {
             tokenManager.clearTokens()
+            appContext?.let { GoogleCredentials.clear(it) }
         }
         ApiResult.Success(Unit)
     }

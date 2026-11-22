@@ -21,9 +21,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.input.ImeAction
@@ -39,10 +41,16 @@ import com.saurabh.mediuserapp.ui.components.GsTextField
 import com.saurabh.mediuserapp.ui.components.LinkButton
 import com.saurabh.mediuserapp.ui.nav.Routes
 import com.saurabh.mediuserapp.viewModel.MyViewModel
+import kotlinx.coroutines.launch
 
 @Composable
 fun SignIn(viewModel: MyViewModel, navController: NavHostController) {
     val state by viewModel.loginUserState.collectAsStateWithLifecycle()
+    val googleState by viewModel.googleLoginState.collectAsStateWithLifecycle()
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var googleEmail by rememberSaveable { mutableStateOf("") }
+    val busy = state.isLoading || googleState.isLoading
     val focusManager = LocalFocusManager.current
 
     var email by rememberSaveable { mutableStateOf("") }
@@ -88,8 +96,49 @@ fun SignIn(viewModel: MyViewModel, navController: NavHostController) {
         viewModel.resetLoginState()
     }
 
+    LaunchedEffect(googleState.error) {
+        val error = googleState.error ?: return@LaunchedEffect
+        when ((googleState.appError as? AppError.Api)?.code) {
+            ErrorCode.ACCOUNT_NOT_APPROVED ->
+                navController.navigate(Routes.WaitingRoutes(googleEmail)) { launchSingleTop = true }
+            ErrorCode.ACCOUNT_BLOCKED ->
+                formError = "Your account has been blocked. Please contact the pharmacy."
+            ErrorCode.RATE_LIMITED ->
+                formError = "Too many attempts. Please wait a moment and try again."
+            ErrorCode.GOOGLE_ACCOUNT_MISMATCH ->
+                formError = "This account is linked to a different Google account. Use that one or your password."
+            else -> formError = error
+        }
+        viewModel.resetGoogleLoginState()
+    }
+
+    LaunchedEffect(googleState.success) {
+        googleState.success ?: return@LaunchedEffect
+        viewModel.resetGoogleLoginState()
+        navController.navigate(Routes.ProductRoutes) {
+            popUpTo(0) { inclusive = true }
+            launchSingleTop = true
+        }
+    }
+
+    fun googleSignIn() {
+        if (busy) return
+        focusManager.clearFocus()
+        formError = null
+        scope.launch {
+            when (val result = GoogleCredentials.requestIdToken(context)) {
+                is GoogleSignInResult.Success -> {
+                    googleEmail = result.email
+                    viewModel.loginUserWithGoogle(result.idToken)
+                }
+                is GoogleSignInResult.Failure -> formError = result.message
+                GoogleSignInResult.Cancelled -> Unit
+            }
+        }
+    }
+
     fun submit() {
-        if (state.isLoading) return
+        if (busy) return
         val e = email.trim()
         emailError = when {
             e.isEmpty() -> "Enter your email"
@@ -159,6 +208,8 @@ fun SignIn(viewModel: MyViewModel, navController: NavHostController) {
             AuthFormError(formError)
             Spacer(modifier = Modifier.height(16.dp))
             AuthPrimaryButton(text = "Sign in", isLoading = state.isLoading, onClick = ::submit)
+            Spacer(modifier = Modifier.height(12.dp))
+            GoogleSignInButton(enabled = !busy, onClick = ::googleSignIn)
             Spacer(modifier = Modifier.height(16.dp))
             HorizontalDivider(color = MaterialTheme.colorScheme.outline)
             Spacer(modifier = Modifier.height(8.dp))

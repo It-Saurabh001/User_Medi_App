@@ -39,6 +39,19 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.DrawerValue
+import androidx.compose.material3.ModalNavigationDrawer
+import androidx.compose.material3.rememberDrawerState
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import com.saurabh.mediuserapp.ui.components.AppDrawerContent
+import com.saurabh.mediuserapp.ui.components.ThemeDialog
+import com.saurabh.mediuserapp.ui.components.ConfirmDialog
+import com.saurabh.mediuserapp.ui.theme.LocalThemeController
+import com.saurabh.mediuserapp.ui.theme.ThemeMode
+import kotlinx.coroutines.launch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
@@ -96,10 +109,8 @@ import com.saurabh.mediuserapp.ui.screens.SignIn
 import com.saurabh.mediuserapp.ui.screens.SignUp
 import com.saurabh.mediuserapp.ui.screens.SplashScreen
 import com.saurabh.mediuserapp.ui.screens.WaitingScreen
-import com.saurabh.mediuserapp.ui.theme.Blue100
-import com.saurabh.mediuserapp.ui.theme.Blue50
-import com.saurabh.mediuserapp.ui.theme.Shade
-import com.saurabh.mediuserapp.ui.theme.Shades
+import com.saurabh.mediuserapp.ui.screens.EmailVerifyScreen
+import com.saurabh.mediuserapp.ui.theme.GsUi
 import com.saurabh.mediuserapp.ui.theme.Transparent
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 import kotlin.reflect.KClass
@@ -122,7 +133,7 @@ private val topLevelTabs = listOf(
 
 private val authRouteClasses: List<KClass<*>> = listOf(
     Routes.SplashRoutes::class, Routes.SignInRoutes::class, Routes.SignUpRoutes::class,
-    Routes.VerifyOtpRoutes::class, Routes.WaitingRoutes::class, Routes.ForgotPasswordRoutes::class,
+    Routes.VerifyOtpRoutes::class, Routes.EmailVerifyRoutes::class, Routes.WaitingRoutes::class, Routes.ForgotPasswordRoutes::class,
     Routes.ForgotPasswordOtpRoutes::class, Routes.ResetPasswordRoutes::class,
     Routes.UpgradeRequiredRoutes::class, Routes.AccountBlockedRoutes::class,
 )
@@ -148,6 +159,29 @@ fun NavApp(viewModel: MyViewModel) {
     val upgradeRequired by viewModel.upgradeRequiredVersion.collectAsStateWithLifecycle()
     val accountBlocked by viewModel.accountBlocked.collectAsStateWithLifecycle()
     val snackbarHostState = remember { SnackbarHostState() }
+    val drawerState = rememberDrawerState(DrawerValue.Closed)
+    val scope = rememberCoroutineScope()
+    val userState by viewModel.specificUserState.collectAsStateWithLifecycle()
+    val themeController = LocalThemeController.current
+    val themeMode = themeController?.mode?.collectAsStateWithLifecycle()?.value ?: ThemeMode.SYSTEM
+    var showThemeDialog by rememberSaveable { mutableStateOf(false) }
+    var confirmLogout by rememberSaveable { mutableStateOf(false) }
+    val onHome = destination?.hasRoute(Routes.ProductRoutes::class) == true
+
+    LaunchedEffect(onHome) { if (!onHome && drawerState.isOpen) drawerState.snapTo(DrawerValue.Closed) }
+    LaunchedEffect(drawerState.isOpen) {
+        if (drawerState.isOpen && userState.success == null && !userState.isLoading) viewModel.getSpecificUser()
+    }
+    val drawerGo: (Any, Boolean) -> Unit = { route, tab ->
+        scope.launch { drawerState.close() }
+        navController.navigate(route) {
+            if (tab) {
+                popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                restoreState = true
+            }
+            launchSingleTop = true
+        }
+    }
 
     LaunchedEffect(Unit) {
         viewModel.messages.collect { snackbarHostState.showSnackbar(it, duration = SnackbarDuration.Short) }
@@ -182,6 +216,22 @@ fun NavApp(viewModel: MyViewModel) {
         }
     }
 
+    ModalNavigationDrawer(
+        drawerState = drawerState,
+        gesturesEnabled = onHome || drawerState.isOpen,
+        drawerContent = {
+            AppDrawerContent(
+                user = userState.success,
+                themeMode = themeMode,
+                onProfile = { drawerGo(Routes.ProfileRoutes, true) },
+                onOrders = { drawerGo(Routes.OrdersRoutes, true) },
+                onHistory = { drawerGo(Routes.HistoryRoutes, true) },
+                onTheme = { showThemeDialog = true },
+                onSettings = { drawerGo(Routes.SettingsRoutes, false) },
+                onLogout = { confirmLogout = true },
+            )
+        },
+    ) {
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = { SnackbarHost(snackbarHostState) },
@@ -226,6 +276,10 @@ fun NavApp(viewModel: MyViewModel) {
             composable<Routes.VerifyOtpRoutes> { entry ->
                 OtpScreen(entry.toRoute<Routes.VerifyOtpRoutes>().accountId, viewModel, navController)
             }
+            composable<Routes.EmailVerifyRoutes> { entry ->
+                val r = entry.toRoute<Routes.EmailVerifyRoutes>()
+                EmailVerifyScreen(r.email, r.sendCode, viewModel, navController)
+            }
             composable<Routes.WaitingRoutes> { entry ->
                 WaitingScreen(entry.toRoute<Routes.WaitingRoutes>().email.orEmpty(), navController)
             }
@@ -241,7 +295,9 @@ fun NavApp(viewModel: MyViewModel) {
             composable<Routes.UpgradeRequiredRoutes> { UpgradeRequiredScreen(viewModel) }
             composable<Routes.AccountBlockedRoutes> { AccountBlockedScreen(viewModel, navController) }
 
-            composable<Routes.ProductRoutes> { ProductScreen(viewModel, navController) }
+            composable<Routes.ProductRoutes> {
+                ProductScreen(viewModel, navController, onOpenDrawer = { scope.launch { drawerState.open() } })
+            }
             composable<Routes.SpecificProductRoutes> { entry ->
                 ProductDetailScreen(entry.toRoute<Routes.SpecificProductRoutes>().productId, viewModel, navController)
             }
@@ -278,6 +334,33 @@ fun NavApp(viewModel: MyViewModel) {
             composable<Routes.SettingsRoutes> { SettingsAboutScreen(viewModel, navController) }
         }
     }
+    }
+
+    if (confirmLogout) {
+        ConfirmDialog(
+            title = "Log out?",
+            message = "You will need to sign in again to place or track orders.",
+            confirmText = "Log out",
+            onConfirm = {
+                confirmLogout = false
+                scope.launch { drawerState.snapTo(DrawerValue.Closed) }
+                viewModel.logout()
+                navController.navigate(Routes.SignInRoutes) {
+                    popUpTo(0) { inclusive = true }
+                    launchSingleTop = true
+                }
+            },
+            onDismiss = { confirmLogout = false },
+        )
+    }
+
+    if (showThemeDialog && themeController != null) {
+        ThemeDialog(
+            current = themeMode,
+            onSelect = { themeController.set(it) },
+            onDismiss = { showThemeDialog = false },
+        )
+    }
 }
 
 @Composable
@@ -313,7 +396,7 @@ private fun RowScope.NavBarItem(
     badge: Int = 0,
 ) {
     val source = remember { MutableInteractionSource() }
-    val shade = if (selected) Shades.BlueChipSelected else Shade(Transparent, Blue50, Blue100)
+    val shade = if (selected) GsUi.chipSelectedShade() else GsUi.rowShade().copy(normal = Transparent)
     val bg by source.shadeColor(shade, "navItem")
     val fg = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
     Column(

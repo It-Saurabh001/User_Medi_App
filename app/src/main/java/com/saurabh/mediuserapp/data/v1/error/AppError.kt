@@ -29,6 +29,9 @@ sealed class AppError {
         ErrorCode.ACCOUNT_NOT_APPROVED ->
             "Your account is awaiting approval by the pharmacy. Please try again later."
         ErrorCode.ACCOUNT_BLOCKED -> "Your account has been blocked. Please contact the pharmacy."
+        ErrorCode.EMAIL_NOT_VERIFIED -> "Verify your email address to continue."
+        ErrorCode.EMAIL_DELIVERY_FAILED -> "We couldn't send the verification email. Please try again shortly."
+        ErrorCode.REQUEST_BLOCKED -> "Your request couldn't be processed. Please check your input."
         ErrorCode.RATE_LIMITED -> "Too many attempts. Please wait a moment or request a new code."
         ErrorCode.VALIDATION_ERROR -> e.message ?: "Please check your details and try again."
         ErrorCode.NOT_FOUND -> "We couldn't find what you were looking for."

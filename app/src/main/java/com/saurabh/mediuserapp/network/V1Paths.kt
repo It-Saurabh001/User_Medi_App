@@ -10,6 +10,7 @@ internal object V1Paths {
     private val PUBLIC_PREFIXES = listOf(
         "auth/login",
         "auth/verify-otp",
+        "auth/resend-otp",
         "auth/password-reset/",
         "app-config",
         "openapi.json"

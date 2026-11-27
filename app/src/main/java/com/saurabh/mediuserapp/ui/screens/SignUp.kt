@@ -134,6 +134,18 @@ fun SignUp(viewModel: MyViewModel, navController: NavHostController) {
         viewModel.resetCreateUserState()
     }
 
+    // Server requires email verification: continue on the code screen (SignUp leaves the back stack).
+    LaunchedEffect(state.success) {
+        val user = state.success ?: return@LaunchedEffect
+        if (user.otpRequired == true) {
+            viewModel.resetCreateUserState()
+            navController.navigate(Routes.EmailVerifyRoutes(user.email)) {
+                popUpTo(Routes.SignInRoutes) { inclusive = false }
+                launchSingleTop = true
+            }
+        }
+    }
+
     fun submit() {
         if (busy) return
         val e = email.trim()
@@ -187,7 +199,7 @@ fun SignUp(viewModel: MyViewModel, navController: NavHostController) {
         topBar = { AuthTopBar("Create account") { if (!busy) backToLogin() } }
     ) { inner ->
         val created = state.success
-        if (created != null) {
+        if (created != null && created.otpRequired != true) {
             AuthFormColumn(modifier = Modifier.padding(inner)) {
                 AuthHeader(
                     icon = Icons.Outlined.HourglassTop,

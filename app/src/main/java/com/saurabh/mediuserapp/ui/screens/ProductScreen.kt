@@ -1,6 +1,21 @@
 package com.saurabh.mediuserapp.ui.screens
 
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
+import androidx.compose.runtime.remember
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import com.saurabh.mediuserapp.ui.components.DrawerAvatarButton
+import com.saurabh.mediuserapp.ui.components.pressScale
+import com.saurabh.mediuserapp.ui.components.shadeColor
+import com.saurabh.mediuserapp.ui.theme.GsUi
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,7 +35,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
-import androidx.compose.material.icons.outlined.FilterList
+import androidx.compose.material.icons.outlined.Tune
 import androidx.compose.material.icons.outlined.QrCodeScanner
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material3.CircularProgressIndicator
@@ -44,8 +59,6 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.res.painterResource
-import com.saurabh.mediuserapp.R
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.style.TextOverflow
@@ -81,12 +94,14 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ProductScreen(viewModel: MyViewModel, navController: NavController) {
+fun ProductScreen(viewModel: MyViewModel, navController: NavController, onOpenDrawer: () -> Unit = {}) {
     val state by viewModel.getAllProduct.collectAsStateWithLifecycle()
     val filter by viewModel.productFilter.collectAsStateWithLifecycle()
     val sort by viewModel.productSort.collectAsStateWithLifecycle()
     val categories by viewModel.categoriesState.collectAsStateWithLifecycle()
     val focus = LocalFocusManager.current
+    val userState by viewModel.specificUserState.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { if (userState.success == null && !userState.isLoading) viewModel.getSpecificUser() }
     var showFilters by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(Unit) { viewModel.getAllProduct(); viewModel.loadProductCategories() }
@@ -114,22 +129,18 @@ fun ProductScreen(viewModel: MyViewModel, navController: NavController) {
     AppScreenScaffold(
         title = "Medicines",
         navigationIcon = {
-            Image(
-                painter = painterResource(R.drawable.glossy_blue_healthcare_shield_icon),
-                contentDescription = "App logo",
-                modifier = Modifier.padding(start = 12.dp, end = 4.dp).size(36.dp)
+            DrawerAvatarButton(
+                url = userState.success?.imageUrl,
+                name = userState.success?.name.orEmpty(),
+                onClick = { focus.clearFocus(); onOpenDrawer() },
+                modifier = Modifier.padding(start = 4.dp)
             )
         },
         scrollBehavior = TopAppBarDefaults.enterAlwaysScrollBehavior(),
         actions = {
             TileIconButton(
                 Icons.Outlined.QrCodeScanner, "Scan barcode",
-                { navController.navigate(Routes.BarcodeScannerRoutes) { launchSingleTop = true } }
-            )
-            TileIconButton(
-                Icons.Outlined.FilterList,
-                if (activeFilters > 0) "Filters ($activeFilters active)" else "Filters",
-                { showFilters = true },
+                { navController.navigate(Routes.BarcodeScannerRoutes) { launchSingleTop = true } },
                 Modifier.padding(end = 8.dp)
             )
         }
@@ -149,6 +160,7 @@ fun ProductScreen(viewModel: MyViewModel, navController: NavController) {
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 item(key = "search", span = { GridItemSpan(maxLineSpan) }, contentType = "search") {
+                  Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     GsTextField(
                         value = query,
                         onValueChange = { query = it },
@@ -160,9 +172,11 @@ fun ProductScreen(viewModel: MyViewModel, navController: NavController) {
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, imeAction = ImeAction.Search),
                         keyboardActions = KeyboardActions(onSearch = { focus.clearFocus() }),
-                        shape = MaterialTheme.shapes.extraLarge,
-                        modifier = Modifier.fillMaxWidth()
+                        shape = MaterialTheme.shapes.medium,
+                        modifier = Modifier.weight(1f)
                     )
+                    FilterSortButton(activeFilters) { focus.clearFocus(); showFilters = true }
+                  }
                 }
                 item(key = "chips", span = { GridItemSpan(maxLineSpan) }, contentType = "chips") {
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -232,6 +246,33 @@ fun ProductScreen(viewModel: MyViewModel, navController: NavController) {
             onApply = { f, s, o -> showFilters = false; viewModel.setProductFilter(f, s, o) },
             onDismiss = { showFilters = false }
         )
+    }
+}
+
+@Composable
+private fun FilterSortButton(activeFilters: Int, onClick: () -> Unit) {
+    val source = remember { MutableInteractionSource() }
+    val bg by source.shadeColor(GsUi.rowShade(), "filterBtn")
+    val scale by source.pressScale()
+    val shape = MaterialTheme.shapes.medium
+    Box(
+        Modifier
+            .size(56.dp)
+            .graphicsLayer { scaleX = scale; scaleY = scale }
+            .clip(shape)
+            .background(bg)
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            .clickable(interactionSource = source, indication = null, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = if (activeFilters > 0) "Filter and sort ($activeFilters active)" else "Filter and sort" },
+        contentAlignment = Alignment.Center
+    ) {
+        BadgedBox(badge = {
+            if (activeFilters > 0) Badge(containerColor = MaterialTheme.colorScheme.primary, contentColor = MaterialTheme.colorScheme.onPrimary) {
+                Text(activeFilters.toString(), maxLines = 1)
+            }
+        }) {
+            Icon(Icons.Outlined.Tune, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
+        }
     }
 }
 

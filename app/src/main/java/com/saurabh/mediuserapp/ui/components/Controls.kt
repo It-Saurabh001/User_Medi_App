@@ -84,7 +84,7 @@ fun GsFilterChip(
     val cs = MaterialTheme.colorScheme
     val shade = when {
         !light -> GsUi.rowShade()
-        selected -> com.saurabh.mediuserapp.ui.theme.Shades.BlueChipSelected
+        selected -> GsUi.chipSelectedShade()
         else -> GsUi.rowShade()
     }
     val bg by source.shadeColor(if (selected && !light) Shade(cs.secondaryContainer, cs.secondaryContainer, cs.secondaryContainer) else shade, "chip")

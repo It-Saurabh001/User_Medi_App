@@ -21,6 +21,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import com.saurabh.mediuserapp.ui.components.ThemeDialog
+import com.saurabh.mediuserapp.ui.theme.LocalThemeController
+import com.saurabh.mediuserapp.ui.theme.ThemeMode
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -55,6 +61,12 @@ fun SettingsAboutScreen(viewModel: MyViewModel, navController: NavController) {
     }
     val apiVersion = (config as? UiState.Success)?.data?.apiVersion
     val go: (Any) -> Unit = { route -> navController.navigate(route) { launchSingleTop = true } }
+    val themeController = LocalThemeController.current
+    val themeMode = themeController?.mode?.collectAsStateWithLifecycle()?.value ?: ThemeMode.SYSTEM
+    var showTheme by rememberSaveable { mutableStateOf(false) }
+    if (showTheme && themeController != null) {
+        ThemeDialog(themeMode, { themeController.set(it) }, { showTheme = false })
+    }
 
     AppScreenScaffold(title = "Settings", onBack = { navController.popBackStack() }) { padding ->
         AdaptiveContent(Modifier.padding(padding), maxWidth = AdaptiveWidths.Form) {
@@ -71,7 +83,7 @@ fun SettingsAboutScreen(viewModel: MyViewModel, navController: NavController) {
                 }
                 item(key = "app") {
                     DetailCard(title = "App", icon = Icons.Outlined.Info) {
-                        InfoTile("Appearance", "Light theme", icon = Icons.Outlined.Palette)
+                        NavRow("Theme", { showTheme = true }, subtitle = themeMode.label, icon = Icons.Outlined.Palette)
                         InfoTile("App version", version + (apiVersion?.let { " · API $it" } ?: ""), icon = Icons.Outlined.Tag)
                     }
                 }

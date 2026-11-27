@@ -7,7 +7,9 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TopAppBarColors
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.Immutable
@@ -38,6 +40,37 @@ private val LightColorScheme = lightColorScheme(
     surfaceContainerHighest = Blue100,
     inverseSurface = Ink, inverseOnSurface = Blue50,
     inversePrimary = Blue300,
+)
+
+private val DarkColorScheme = darkColorScheme(
+    primary = Blue300, onPrimary = Blue900,
+    primaryContainer = Blue800, onPrimaryContainer = Blue100,
+    secondary = Sky200, onSecondary = Sky800,
+    secondaryContainer = Night700, onSecondaryContainer = Blue100,
+    tertiary = Green200, onTertiary = Green800,
+    tertiaryContainer = Green800, onTertiaryContainer = Green100,
+    error = Red200, onError = Red800,
+    errorContainer = Red800, onErrorContainer = Red100,
+    background = Night950, onBackground = NightInk,
+    surface = Night900, onSurface = NightInk,
+    surfaceVariant = Night800, onSurfaceVariant = NightMuted,
+    outline = Night700, outlineVariant = Night700,
+    surfaceTint = Blue300,
+    surfaceContainerLowest = Night950,
+    surfaceContainerLow = Night900,
+    surfaceContainer = Night800,
+    surfaceContainerHigh = Night800,
+    surfaceContainerHighest = Night700,
+    inverseSurface = NightInk, inverseOnSurface = Night900,
+    inversePrimary = Blue600,
+)
+
+private val DarkStatusColors = StatusColors(
+    successBg = Green800, successText = Green100,
+    warningBg = Amber800, warningText = Amber100,
+    dangerBg = Red800, dangerText = Red100,
+    infoBg = Sky800, infoText = Sky100,
+    neutralBg = Night700, neutralText = NightMuted,
 )
 
 @Immutable
@@ -71,16 +104,18 @@ val MaterialTheme.isLight: Boolean
 
 /** Theme-aware press shades and control colours (U5/U9/U13). */
 object GsUi {
-    @Composable fun rowShade(): Shade = Shades.BlueRow
-    @Composable fun secondaryButtonShade(): Shade = Shades.BlueSecondaryButton
-    @Composable fun iconButtonShade(): Shade = Shades.IconButton
-    @Composable fun familyShade(light: Shade): Shade = light
+    private val NightRow = Shade(Night900, Night800, Night700)
+    @Composable fun rowShade(): Shade = if (MaterialTheme.isLight) Shades.BlueRow else NightRow
+    @Composable fun secondaryButtonShade(): Shade = if (MaterialTheme.isLight) Shades.BlueSecondaryButton else NightRow
+    @Composable fun iconButtonShade(): Shade = if (MaterialTheme.isLight) Shades.IconButton else Shade(Night800, Night700, Night600)
+    @Composable fun chipSelectedShade(): Shade = if (MaterialTheme.isLight) Shades.BlueChipSelected else Shade(Blue800, Blue700, Blue700)
+    @Composable fun familyShade(light: Shade): Shade = if (MaterialTheme.isLight) light else NightRow
 
     /** Unfocused Outline 1dp, focused Blue 500 2dp, error Red 600, label Muted -> Blue 600, White fill. */
     @Composable fun fieldColors(): TextFieldColors {
         val cs = MaterialTheme.colorScheme
         return OutlinedTextFieldDefaults.colors(
-            focusedBorderColor = Blue500,
+            focusedBorderColor = if (MaterialTheme.isLight) Blue500 else Blue300,
             unfocusedBorderColor = cs.outline,
             errorBorderColor = cs.error,
             focusedLabelColor = cs.primary,
@@ -109,11 +144,17 @@ object GsUi {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun MediUserAppTheme(content: @Composable () -> Unit) {
-    // Light palette only, no dynamic colour; no ripple (press = same-family shade).
-    CompositionLocalProvider(LocalStatusColors provides StatusColors(), LocalRippleConfiguration provides null) {
+fun MediUserAppTheme(
+    darkTheme: Boolean = isSystemInDarkTheme(),
+    content: @Composable () -> Unit,
+) {
+    // No dynamic colour; no ripple (press = same-family shade).
+    CompositionLocalProvider(
+        LocalStatusColors provides if (darkTheme) DarkStatusColors else StatusColors(),
+        LocalRippleConfiguration provides null,
+    ) {
         MaterialTheme(
-            colorScheme = LightColorScheme,
+            colorScheme = if (darkTheme) DarkColorScheme else LightColorScheme,
             typography = Typography,
             shapes = Shapes,
             content = content

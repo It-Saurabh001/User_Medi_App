@@ -22,7 +22,11 @@ data class UserDto(
     @SerializedName("created_at") val createdAt: Instant,
     /** null on older servers: treat as a password account. */
     @SerializedName("has_password") val hasPassword: Boolean? = null,
-    @SerializedName("google_linked") val googleLinked: Boolean? = null
+    @SerializedName("google_linked") val googleLinked: Boolean? = null,
+    /** Signup only, when the server requires email verification. */
+    @SerializedName("otp_required") val otpRequired: Boolean? = null,
+    /** PATCH users/me only: the new email must be verified before the next sign-in. */
+    @SerializedName("email_verification_required") val emailVerificationRequired: Boolean? = null
 )
 
 private val TEXT_TYPE = "text/plain; charset=utf-8".toMediaType()

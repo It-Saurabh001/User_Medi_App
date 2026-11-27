@@ -31,6 +31,29 @@ data class VerifyOtpRequest(
     @SerializedName("account_type") val accountType: String = ACCOUNT_TYPE_USER
 )
 
+/** POST auth/verify-otp, email verification form (no account_id). */
+data class VerifyEmailRequest(
+    @SerializedName("email") val email: String,
+    @SerializedName("otp") val otp: String,
+    @SerializedName("account_type") val accountType: String = ACCOUNT_TYPE_USER
+)
+
+data class VerifyEmailData(
+    @SerializedName("account_id") val accountId: String,
+    @SerializedName("email_verified") val emailVerified: Boolean
+)
+
+/** POST auth/resend-otp (server default account_type is admin, so it is always sent). */
+data class ResendOtpRequest(
+    @SerializedName("email") val email: String,
+    @SerializedName("account_type") val accountType: String = ACCOUNT_TYPE_USER
+)
+
+data class ResendOtpData(
+    @SerializedName("otp_expires_in") val otpExpiresIn: Int?,
+    @SerializedName("resend_cooldown") val resendCooldown: Int? = null
+)
+
 /** data of auth/verify-otp and auth/refresh. */
 data class TokenData(
     @SerializedName("access_token") val accessToken: String,

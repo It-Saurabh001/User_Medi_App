@@ -17,6 +17,10 @@ sealed class Routes {
     @Serializable
     data class VerifyOtpRoutes(val accountId: String)
 
+    /** [sendCode]: request a new code on entry (unverified sign-in). */
+    @Serializable
+    data class EmailVerifyRoutes(val email: String, val sendCode: Boolean = false)
+
     @Serializable
     data class WaitingRoutes(val email: String? = null)
 

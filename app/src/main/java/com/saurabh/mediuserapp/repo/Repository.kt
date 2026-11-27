@@ -43,6 +43,10 @@ import com.saurabh.mediuserapp.data.v1.dto.TokenData
 import com.saurabh.mediuserapp.data.v1.dto.UserCreateRequest
 import com.saurabh.mediuserapp.data.v1.dto.UserDto
 import com.saurabh.mediuserapp.data.v1.dto.VerifyOtpRequest
+import com.saurabh.mediuserapp.data.v1.dto.ResendOtpData
+import com.saurabh.mediuserapp.data.v1.dto.ResendOtpRequest
+import com.saurabh.mediuserapp.data.v1.dto.VerifyEmailData
+import com.saurabh.mediuserapp.data.v1.dto.VerifyEmailRequest
 import com.saurabh.mediuserapp.data.v1.dto.textParts
 import com.saurabh.mediuserapp.network.ApiProvider
 import com.saurabh.mediuserapp.network.TokenBundle
@@ -95,6 +99,14 @@ class Repository @Inject constructor(
                 )
             }
         }
+    }
+
+    fun verifyEmail(email: String, otp: String): Flow<ResultState<VerifyEmailData>> = v1Flow {
+        safeApiCall { authApi.verifyEmail(VerifyEmailRequest(email, otp)) }
+    }
+
+    fun resendVerificationOtp(email: String): Flow<ResultState<ResendOtpData>> = v1Flow {
+        safeApiCall { authApi.resendOtp(ResendOtpRequest(email)) }
     }
 
     fun requestPasswordReset(email: String): Flow<ResultState<PasswordResetRequestData>> = v1Flow {

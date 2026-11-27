@@ -65,8 +65,15 @@ fun ChangeCredentialsScreen(viewModel: MyViewModel, navController: NavController
         if (userState.success == null) viewModel.getSpecificUser()
     }
     LaunchedEffect(state.success) {
-        if (state.success != null) {
+        val updated = state.success
+        if (updated != null) {
             viewModel.resetUpdateProfileState()
+            if (updated.emailVerificationRequired == true) {
+                viewModel.getSpecificUser()
+                navController.popBackStack()
+                navController.navigate(Routes.EmailVerifyRoutes(updated.email)) { launchSingleTop = true }
+                return@LaunchedEffect
+            }
             val message = if (emailChanged) "Email updated. Use the new email next time you sign in." else "Password updated"
             runCatching { navController.previousBackStackEntry?.savedStateHandle?.set(AUTH_MESSAGE_KEY, message) }
             navController.popBackStack()

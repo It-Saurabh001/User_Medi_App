@@ -70,3 +70,9 @@ object Shades {
     val SkyCard = Shade(Sky50, Sky100, Sky200)
     val SkyText = Shade(Sky600, Sky700, Sky800)
 }
+
+// Night: dark theme neutrals
+val Night950 = Color(0xFF0A1322); val Night900 = Color(0xFF101B2E)
+val Night800 = Color(0xFF17253C); val Night700 = Color(0xFF223450)
+val Night600 = Color(0xFF2E4466)
+val NightInk = Color(0xFFE6EEFA); val NightMuted = Color(0xFF9DB0CC)

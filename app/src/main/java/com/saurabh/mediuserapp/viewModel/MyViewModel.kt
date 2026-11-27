@@ -50,6 +50,7 @@ import jakarta.inject.Inject
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import com.saurabh.mediuserapp.utils.screensState.EmailVerifyState
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -114,6 +115,9 @@ class MyViewModel @Inject constructor(
     private val _googleLoginState = MutableStateFlow(VerifyOtpState())
     val googleLoginState = _googleLoginState.asStateFlow()
     val verifyOtpState = _verifyOtpState.asStateFlow()
+
+    private val _emailVerifyState = MutableStateFlow(EmailVerifyState())
+    val emailVerifyState = _emailVerifyState.asStateFlow()
 
     private val _passwordResetOtpState = MutableStateFlow(PasswordResetOtpState())
     val passwordResetOtpState = _passwordResetOtpState.asStateFlow()
@@ -238,6 +242,7 @@ class MyViewModel @Inject constructor(
         _specificUserState.value = UserState()
         _updateProfileState.value = UpdateProfileState()
         _verifyOtpState.value = VerifyOtpState()
+        _emailVerifyState.value = EmailVerifyState()
         _passwordResetOtpState.value = PasswordResetOtpState()
         _passwordResetState.value = PasswordResetState()
         _getAllProduct.value = AllProductState()
@@ -350,6 +355,33 @@ class MyViewModel @Inject constructor(
                 }
             )
         }
+    }
+
+    // Email verification (signup / unverified sign-in / changed email)
+    fun verifyEmail(email: String, otp: String) {
+        if (_emailVerifyState.value.isVerifying) return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.verifyEmail(email, otp).collectInto(
+                onLoading = { _emailVerifyState.value = EmailVerifyState(isVerifying = true) },
+                onError = { msg, err -> _emailVerifyState.value = EmailVerifyState(error = msg, appError = err) },
+                onSuccess = { _emailVerifyState.value = EmailVerifyState(verified = true) }
+            )
+        }
+    }
+
+    fun resendVerificationOtp(email: String) {
+        if (_emailVerifyState.value.isResending) return
+        viewModelScope.launch(Dispatchers.IO) {
+            repository.resendVerificationOtp(email).collectInto(
+                onLoading = { _emailVerifyState.value = EmailVerifyState(isResending = true) },
+                onError = { msg, err -> _emailVerifyState.value = EmailVerifyState(error = msg, appError = err) },
+                onSuccess = { _emailVerifyState.value = EmailVerifyState(codeSent = true) }
+            )
+        }
+    }
+
+    fun resetEmailVerifyState() {
+        _emailVerifyState.value = EmailVerifyState()
     }
 
     // Request Password Reset OTP

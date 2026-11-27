@@ -10,6 +10,10 @@ import com.saurabh.mediuserapp.data.v1.dto.PasswordResetConfirmRequest
 import com.saurabh.mediuserapp.data.v1.dto.PasswordResetRequest
 import com.saurabh.mediuserapp.data.v1.dto.PasswordResetRequestData
 import com.saurabh.mediuserapp.data.v1.dto.RefreshData
+import com.saurabh.mediuserapp.data.v1.dto.ResendOtpData
+import com.saurabh.mediuserapp.data.v1.dto.ResendOtpRequest
+import com.saurabh.mediuserapp.data.v1.dto.VerifyEmailData
+import com.saurabh.mediuserapp.data.v1.dto.VerifyEmailRequest
 import com.saurabh.mediuserapp.data.v1.dto.TokenData
 import com.saurabh.mediuserapp.data.v1.dto.VerifyOtpRequest
 import retrofit2.Call
@@ -28,6 +32,12 @@ interface AuthApi {
 
     @POST("auth/verify-otp")
     suspend fun verifyOtp(@Body body: VerifyOtpRequest): Response<ApiEnvelope<TokenData>>
+
+    @POST("auth/verify-otp")
+    suspend fun verifyEmail(@Body body: VerifyEmailRequest): Response<ApiEnvelope<VerifyEmailData>>
+
+    @POST("auth/resend-otp")
+    suspend fun resendOtp(@Body body: ResendOtpRequest): Response<ApiEnvelope<ResendOtpData>>
 
     /** Blocking; used only by TokenAuthenticator. Bearer = REFRESH token. */
     @POST("auth/refresh")

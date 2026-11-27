@@ -73,6 +73,10 @@ fun SignIn(viewModel: MyViewModel, navController: NavHostController) {
         when ((appError as? AppError.Api)?.code) {
             ErrorCode.ACCOUNT_NOT_APPROVED ->
                 navController.navigate(Routes.WaitingRoutes(email.trim())) { launchSingleTop = true }
+            ErrorCode.EMAIL_NOT_VERIFIED ->
+                navController.navigate(Routes.EmailVerifyRoutes(email.trim(), sendCode = true)) {
+                    launchSingleTop = true
+                }
             ErrorCode.ACCOUNT_BLOCKED ->
                 formError = "Your account has been blocked. Please contact the pharmacy."
             ErrorCode.RATE_LIMITED ->

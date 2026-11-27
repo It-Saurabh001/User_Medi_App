@@ -224,3 +224,16 @@ Navigation changes: + `CartRoutes` (bottom-bar tab 2, badge = item count; bar no
 PENDING_EDGES: none.
 
 Theme additions: none.
+
+## Change: navigation drawer + theme switch (2026-11-27)
+- Home (ProductScreen): top-left circular profile photo (`DrawerAvatarButton`) opens `ModalNavigationDrawer` (hosted in `NavApp`, gestures only on Home). Filter/sort moved from top bar to a 56dp button right of the search bar (badge = active filter count); search bar shape now `shapes.medium` like cards.
+- Drawer (`ui/components/AppDrawer.kt`): profile header (photo, name, email, phone, approval chips), My profile, My orders, Purchase history, Theme, Settings.
+- Theme: `ui/theme/ThemeMode.kt` (`ThemeMode` System/Light/Dark, `ThemeController` in SharedPreferences "ui_prefs", `LocalThemeController`), `ThemeDialog`. `MediUserAppTheme(darkTheme)` with `DarkColorScheme` + dark `StatusColors`; `GsUi` shades theme-aware (+ `chipSelectedShade()`). Settings "Appearance" is now a Theme row.
+- Profile: removed top-bar edit action and Settings button.
+- Theme additions: Night950/900/800/700/600, NightInk, NightMuted.
+- LOCKED: ui/components/AppDrawer.kt, ui/theme/ThemeMode.kt
+
+## Change: drawer logout + profile photo preview (2026-11-27)
+- Log out moved to the bottom of the navigation drawer (ConfirmDialog in NavApp); removed from ProfileScreen. AccountBlocked keeps its own Log out (no drawer there).
+- ProfileScreen: long-press on the profile box opens AvatarPreviewOverlay (ui/components/AvatarPreviewOverlay.kt): photo grows from the avatar to a large rounded square, scrim 45% + 18dp blur on the screen behind; tap outside or back closes it.
+- LOCKED: ui/components/AvatarPreviewOverlay.kt

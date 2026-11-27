@@ -1,6 +1,24 @@
 package com.saurabh.mediuserapp.ui.screens
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalHapticFeedback
+import com.saurabh.mediuserapp.ui.components.AvatarPreviewOverlay
+import kotlinx.coroutines.launch
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -10,7 +28,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.Logout
 import androidx.compose.material.icons.outlined.CalendarMonth
 import androidx.compose.material.icons.outlined.Edit
 import androidx.compose.material.icons.outlined.Email
@@ -20,7 +37,6 @@ import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.Person
 import androidx.compose.material.icons.outlined.Phone
 import androidx.compose.material.icons.outlined.PinDrop
-import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
@@ -43,7 +59,6 @@ import androidx.navigation.NavController
 import com.saurabh.mediuserapp.ui.adaptive.AdaptiveContent
 import com.saurabh.mediuserapp.ui.adaptive.AdaptiveWidths
 import com.saurabh.mediuserapp.ui.components.AppScreenScaffold
-import com.saurabh.mediuserapp.ui.components.ConfirmDialog
 import com.saurabh.mediuserapp.ui.components.DetailCard
 import com.saurabh.mediuserapp.ui.components.ErrorState
 import com.saurabh.mediuserapp.ui.components.InfoTile
@@ -51,21 +66,36 @@ import com.saurabh.mediuserapp.ui.components.LoadingState
 import com.saurabh.mediuserapp.ui.components.PersonAvatar
 import com.saurabh.mediuserapp.ui.components.ShadeButton
 import com.saurabh.mediuserapp.ui.components.ShadeOutlinedButton
-import com.saurabh.mediuserapp.ui.components.TileIconButton
 import com.saurabh.mediuserapp.ui.components.Tone
 import com.saurabh.mediuserapp.ui.components.ToneChip
 import com.saurabh.mediuserapp.ui.components.dateTimeLabel
 import com.saurabh.mediuserapp.ui.nav.Routes
-import com.saurabh.mediuserapp.ui.theme.Red600
 import com.saurabh.mediuserapp.viewModel.MyViewModel
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ProfileScreen(viewModel: MyViewModel, navController: NavController) {
     val state by viewModel.specificUserState.collectAsStateWithLifecycle()
     val user = state.success
     val snackbar = remember { SnackbarHostState() }
-    var confirmLogout by rememberSaveable { mutableStateOf(false) }
+    var avatarBounds by remember { mutableStateOf(Rect.Zero) }
+    var previewOrigin by remember { mutableStateOf<Rect?>(null) }
+    val reveal = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    val openPreview = {
+        if (previewOrigin == null && avatarBounds != Rect.Zero) {
+            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+            previewOrigin = avatarBounds
+            scope.launch { reveal.animateTo(1f, spring(dampingRatio = 0.82f, stiffness = Spring.StiffnessMediumLow)) }
+        }
+    }
+    val closePreview: () -> Unit = {
+        scope.launch {
+            reveal.animateTo(0f, tween(220))
+            previewOrigin = null
+        }
+    }
     LaunchedEffect(Unit) { if (state.success == null && !state.isLoading) viewModel.getSpecificUser() }
 
     val handle = navController.currentBackStackEntry?.savedStateHandle
@@ -77,12 +107,11 @@ fun ProfileScreen(viewModel: MyViewModel, navController: NavController) {
     }
     val go: (Any) -> Unit = { route -> navController.navigate(route) { launchSingleTop = true } }
 
+    Box(Modifier.fillMaxSize()) {
     AppScreenScaffold(
         title = "My profile",
         snackbarHostState = snackbar,
-        actions = {
-            if (user != null) TileIconButton(Icons.Outlined.Edit, "Edit profile", { go(Routes.EditProfileRoutes) }, Modifier.padding(end = 8.dp))
-        },
+        modifier = Modifier.blur((18 * reveal.value).dp),
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize()) {
             when {
@@ -99,11 +128,23 @@ fun ProfileScreen(viewModel: MyViewModel, navController: NavController) {
                         ) {
                             item(key = "identity") {
                                 Column(
-                                    Modifier.fillMaxWidth(),
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .clip(MaterialTheme.shapes.medium)
+                                        .combinedClickable(
+                                            interactionSource = remember { MutableInteractionSource() }, indication = null,
+                                            onLongClickLabel = "View profile photo",
+                                            onClick = {}, onLongClick = { openPreview() },
+                                        ),
                                     horizontalAlignment = Alignment.CenterHorizontally,
                                     verticalArrangement = Arrangement.spacedBy(8.dp),
                                 ) {
-                                    PersonAvatar(url = user.imageUrl, name = user.name, size = 96.dp)
+                                    PersonAvatar(
+                                        url = user.imageUrl, name = user.name, size = 96.dp,
+                                        modifier = Modifier
+                                            .onGloballyPositioned { avatarBounds = it.boundsInRoot() }
+                                            .graphicsLayer { alpha = if (previewOrigin != null) 0f else 1f },
+                                    )
                                     Text(
                                         user.name, style = MaterialTheme.typography.titleLarge,
                                         color = MaterialTheme.colorScheme.onBackground,
@@ -134,19 +175,6 @@ fun ProfileScreen(viewModel: MyViewModel, navController: NavController) {
                                     Modifier.fillMaxWidth(), icon = Icons.Outlined.Lock
                                 )
                             }
-                            item(key = "settings") {
-                                ShadeOutlinedButton(
-                                    "Settings & about", { go(Routes.SettingsRoutes) },
-                                    Modifier.fillMaxWidth(), icon = Icons.Outlined.Settings
-                                )
-                            }
-                            item(key = "logout") {
-                                ShadeOutlinedButton(
-                                    text = "Log out", onClick = { confirmLogout = true },
-                                    icon = Icons.AutoMirrored.Outlined.Logout, contentColor = Red600,
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
                         }
                     }
                 }
@@ -159,20 +187,12 @@ fun ProfileScreen(viewModel: MyViewModel, navController: NavController) {
         }
     }
 
-    if (confirmLogout) {
-        ConfirmDialog(
-            title = "Log out?",
-            message = "You will need to sign in again to place or track orders.",
-            confirmText = "Log out",
-            onConfirm = {
-                confirmLogout = false
-                viewModel.logout()
-                navController.navigate(Routes.SignInRoutes) {
-                    popUpTo(0) { inclusive = true }
-                    launchSingleTop = true
-                }
-            },
-            onDismiss = { confirmLogout = false },
+    val origin = previewOrigin
+    if (origin != null && user != null) {
+        AvatarPreviewOverlay(
+            url = user.imageUrl, name = user.name, origin = origin,
+            progress = reveal.value, onDismiss = closePreview,
         )
+    }
     }
 }
